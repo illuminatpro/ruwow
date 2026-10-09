@@ -156,7 +156,10 @@ end
 
 -- Естественный конец (таймер / событие TTS): очередь берёт следующий текст.
 local function Finished()
+    local handle = state.soundHandle
     SetPlaying(false)
+    -- дорожка доиграла: на 3.3.5 вернуть музыку локации, если очередь пуста
+    if handle == "music" and ns.StopVoiceHandle then ns.StopVoiceHandle(handle) end
     if ns.OnPlaybackEnded then ns.OnPlaybackEnded() end
 end
 
@@ -164,7 +167,8 @@ ns.state = state
 
 local function Stop()
     if (state.source == "file" or state.source == "pack") and state.soundHandle then
-        StopSound(state.soundHandle, 300)
+        if ns.StopVoiceHandle then ns.StopVoiceHandle(state.soundHandle)
+        elseif StopSound then StopSound(state.soundHandle, 300) end
     end
     if state.source == "bridge" then
         ns.BridgeStop()
@@ -201,6 +205,7 @@ end
 -- голова и субтитры идут, звука нет (тестер 26.09.2026 — селфтест проходил, т.к. играл в Master). Тогда — основной канал.
 local channelWarned
 function ns.SoundChannel()
+    if ns.legacy then return "Music" end
     if db.masterChannel then return "Master" end
     if db.channel ~= "Dialog" then return db.channel end
     local enabled = GetCVar and GetCVar("Sound_EnableDialog")
@@ -218,7 +223,7 @@ end
 local function PlayFile(hash)
     local dur = CatQuestVoiceIndex and CatQuestVoiceIndex[hash]
     if not dur then return false end
-    local willPlay, handle = PlaySoundFile(VOICE_DIR .. hash .. ".mp3", ns.SoundChannel())
+    local willPlay, handle = ns.PlayVoiceFile(VOICE_DIR .. hash .. ".mp3")
     if not willPlay then return false end
     state.soundHandle = handle
     SetPlaying(true, "file", dur)
@@ -264,7 +269,7 @@ local function PlayPack(meta)
     if not entry then return false end
     if ns.CheckMismatch then ns.CheckMismatch(entry, meta) end  -- QA: голос из пака против NPC перед игроком
     local suffix = entry.g and (UnitSex("player") == 3 and "_f" or "_m") or ""
-    local willPlay, handle = PlaySoundFile(dir .. file .. suffix .. ".ogg", ns.SoundChannel())
+    local willPlay, handle = ns.PlayVoiceFile(dir .. file .. suffix .. ".ogg")
     if not willPlay then
         -- запись в паке есть, а клиент файл не видит: чаще всего пак положили при запущенной игре (нужен полный перезапуск)
         if ns.NoteResult then ns.NoteResult("файл не найден " .. file .. suffix .. ".ogg", meta) end
@@ -599,7 +604,12 @@ function ns.ReadQuest(questID, enqueue)
 end
 
 local function CurrentQuestID()
-    return GetQuestID and GetQuestID() or nil
+    if GetQuestID then
+        local id = GetQuestID()
+        if id and id ~= 0 then return id end
+    end
+    -- 3.3.5a не отдаёт ID открытого квеста: ищем его по тексту пака
+    if ns.QuestIDFromOpenWindow then return ns.QuestIDFromOpenWindow() end
 end
 
 local handlers = {}
@@ -610,7 +620,21 @@ end
 
 -- Режим «читать после принятия»: текст NPC сохранён при показе окна, читаем его, когда квест взят.
 function handlers.QUEST_ACCEPTED(a, b)
-    local questID = b or a  -- ретейл: (questID); классика: (индекс в журнале, questID)
+    -- ретейл: (questID); 4.x: (индекс, questID); 3.3.5: часто только индекс в журнале, иногда без аргументов
+    local questID
+    if type(b) == "number" and b > 0 then
+        questID = b
+    elseif type(a) == "number" and a > 0 then
+        local n = GetNumQuestLogEntries and GetNumQuestLogEntries() or 0
+        if a <= n and GetQuestLink then
+            local link = GetQuestLink(a)
+            questID = link and tonumber(link:match("quest:(%d+)"))
+        end
+        if not questID and a > n then questID = a end
+    end
+    if not questID and state.offerMeta and state.offerMeta.quest and state.offerMeta.quest > 0 then
+        questID = state.offerMeta.quest
+    end
     if db.readAfterAccept and db.autoDetail and questID and questID > 0 then
         -- через очередь: несколько принятых подряд читаются по одному, текущее не обрывается.
         -- Чуть позже, чем QUEST_FINISHED окна: иначе «останавливать при закрытии окна» обрывает только что начатое чтение
@@ -653,7 +677,10 @@ handlers.ITEM_TEXT_CLOSED = OnWindowClosed
 -- /reload и выход (B-31): звук PlaySoundFile живёт в клиенте и переживает перезагрузку интерфейса, а наш handle — нет: после
 -- /reload дорожку уже не остановить, головы нет, очередь пуста — следующая озвучка ложилась поверх. Глушим до выгрузки.
 function handlers.PLAYER_LOGOUT()
-    if state.soundHandle then StopSound(state.soundHandle, 0) end
+    if state.soundHandle then
+        if ns.StopVoiceHandle then ns.StopVoiceHandle(state.soundHandle)
+        elseif StopSound then StopSound(state.soundHandle, 0) end
+    end
     if state.source == "bridge" and ns.BridgeStop then ns.BridgeStop() end
     if C_VoiceChat and C_VoiceChat.StopSpeakingText then C_VoiceChat.StopSpeakingText() end
     KeepSoundInBackground(false)
@@ -698,14 +725,15 @@ local function CreateFrameButton(parent, onClick)
     local b = CreateFrame("Button", nil, parent, "UIPanelButtonTemplate")
     b:SetSize(74, 20)
     b:SetFrameStrata("DIALOG")
-    b:SetPoint("TOPRIGHT", parent, "TOPRIGHT", -28, -2)
+    -- левее крестика окна: на 3.3.5 он сидит в самом углу
+    b:SetPoint("TOPRIGHT", parent, "TOPRIGHT", -44, -8)
     b:SetScript("OnClick", onClick or CatQuest_Toggle)
     frameButtons[#frameButtons + 1] = b
     return b
 end
 
 local function CreateBar()
-    bar = CreateFrame("Frame", "CatQuestBar", UIParent, "BackdropTemplate")
+    bar = CreateFrame("Frame", "CatQuestBar", UIParent, ns.Backdrop)
     bar:SetSize(170, 28)
     bar:SetPoint(db.bar.point, UIParent, db.bar.point, db.bar.x, db.bar.y)
     bar:SetFrameStrata("HIGH")
@@ -785,7 +813,12 @@ local function HookQuestLog()
     end
     local classicLog = QuestLogDetailFrame or QuestLogFrame
     if classicLog and not classicLog.catQuestButton then
-        classicLog.catQuestButton = LogButton(classicLog)
+        local b = LogButton(classicLog)
+        classicLog.catQuestButton = b
+        if classicLog == QuestLogFrame then
+            b:ClearAllPoints()
+            b:SetPoint("BOTTOMRIGHT", classicLog, "BOTTOMRIGHT", -40, 80)
+        end
     end
 end
 
@@ -793,7 +826,10 @@ end
 -- Настройки (Settings API, если есть) + слэш-команды
 ---------------------------------------------------------------------------
 local function RegisterSettings()
-    if not (Settings and Settings.RegisterVerticalLayoutCategory and Settings.RegisterAddOnSetting) then return end
+    if not (Settings and Settings.RegisterVerticalLayoutCategory and Settings.RegisterAddOnSetting) then
+        if ns.RegisterLegacyOptions then ns.RegisterLegacyOptions() end
+        return
+    end
     local category = Settings.RegisterVerticalLayoutCategory("CatQuest")
 
     local layout = SettingsPanel and SettingsPanel.GetLayout and SettingsPanel:GetLayout(category)
@@ -986,8 +1022,10 @@ SlashCmdList.CATQUEST = function(msg)
         state.text, state.meta = "Проверка встроенного голоса.", { kind = "test" }
         PlayTTS(state.text, 2)
     elseif cmd == "options" or cmd == "config" then
-        if ns.settingsCategory and Settings.OpenToCategory then
+        if ns.settingsCategory and Settings and Settings.OpenToCategory then
             Settings.OpenToCategory(ns.settingsCategory:GetID())
+        elseif ns.OpenLegacyOptions then
+            ns.OpenLegacyOptions()
         end
     elseif cmd == "" then
         CatQuest_Toggle()
@@ -1010,8 +1048,16 @@ local function Welcome()
         db.seenVersion = version
         Print(("|cffffd100добро пожаловать!|r CatQuest %s — русская озвучка квестов, книг и истории мест. %s."):format(version, packs))
         Print("Возьмите квест — его прочитает голос персонажа; над головой появится портрет с субтитрами (её можно тянуть).")
-        Print("Настройки: Esc > Параметры > Дополнения > CatQuest. Команды: /cq — окно квестов и истории, /cq stop, /cq test, /cq help.")
+        if ns.legacy then
+            Print("Настройки: /cq options. Громкость — ползунок «Музыка»: на 3.3.5a озвучку можно остановить, поэтому она идёт музыкальным каналом.")
+        else
+            Print("Настройки: Esc > Параметры > Дополнения > CatQuest. Команды: /cq — окно квестов и истории, /cq stop, /cq test, /cq help.")
+        end
         return
+    end
+    if ns.legacy and not db.legacyNoted then
+        db.legacyNoted = true
+        Print("WoW 3.3.5a: громкость озвучки — ползунок «Музыка». Пока говорит персонаж, музыка локации замолкает.")
     end
     if db.seenVersion ~= version then
         db.seenVersion = version

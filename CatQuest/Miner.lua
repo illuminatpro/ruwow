@@ -48,6 +48,10 @@ local function Tick()
 end
 
 function ns.Mine(cmd)
+    if not (C_QuestLog and C_QuestLog.RequestLoadQuestByID) then
+        Print("сбор текстов квестов с сервера есть только на новых клиентах. На 3.3.5a пак уже собран, /cq mine не нужен.")
+        return
+    end
     if cmd == "stop" then
         if run then run.ticker:Cancel(); Report(true); run = nil end
         return

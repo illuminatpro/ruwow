@@ -119,19 +119,33 @@ function ns.SelfTest(print)
     check(ns.GreetByDisplay and next(ns.GreetByDisplay) ~= nil, "длительности приветствий")
     local zone = GetRealZoneText and GetRealZoneText() or GetZoneText()
     check(ns.LoreZones and ns.LoreZones[zone] ~= nil, "лор текущей зоны: " .. tostring(zone))
-    local api = C_QuestLog and C_QuestLog.IsQuestFlaggedCompleted and C_QuestLog.GetSelectedQuest and C_Map and C_Map.GetPlayerMapPosition
-    check(api ~= nil, "нужные API клиента")
+    if ns.legacy then
+        check(GetQuestLogQuestText and GetGossipText and GetTitleText and PlayMusic and StopMusic, "API 3.3.5a: квесты, диалоги, музыка")
+        local indexed = ns.EnsureQuestTextIndex and ns.EnsureQuestTextIndex() or 0
+        check(indexed > 0, "индекс текстов квестов для поиска ID: " .. indexed)
+    else
+        local api = C_QuestLog and C_QuestLog.IsQuestFlaggedCompleted and C_QuestLog.GetSelectedQuest and C_Map and C_Map.GetPlayerMapPosition
+        check(api ~= nil, "нужные API клиента")
+    end
     -- звук: проверяем тем же каналом, которым играет озвучка (раньше пробный файл шёл в Master и проходил
     -- даже при выключенных «Диалогах» — тестер 26.09.2026: селфтест ок, голоса нет)
     local allOn = GetCVar("Sound_EnableAllSound") ~= "0"
     check(allOn, "звук в игре включён")
-    local dialogOn = GetCVar("Sound_EnableDialog") ~= "0"
-    local dialogVol = math.floor((tonumber(GetCVar("Sound_DialogVolume")) or 0) * 100 + 0.5)
-    check(dialogOn and dialogVol >= 5, ("канал «Диалоги» включён, громкость %d%%"):format(dialogVol)
-        .. ((dialogOn and dialogVol >= 5) and "" or " — озвучка пойдёт в основной канал; лучше включить «Диалоги» в настройках звука"))
+    if ns.legacy then
+        local musicOn = GetCVar("Sound_EnableMusic") ~= "0"
+        local musicVol = math.floor((tonumber(GetCVar("Sound_MusicVolume")) or 0) * 100 + 0.5)
+        check(musicOn and musicVol >= 5, ("канал «Музыка» включён, громкость %d%% — на 3.3.5a озвучка идёт через него"):format(musicVol))
+    else
+        local dialogOn = GetCVar("Sound_EnableDialog") ~= "0"
+        local dialogVol = math.floor((tonumber(GetCVar("Sound_DialogVolume")) or 0) * 100 + 0.5)
+        check(dialogOn and dialogVol >= 5, ("канал «Диалоги» включён, громкость %d%%"):format(dialogVol)
+            .. ((dialogOn and dialogVol >= 5) and "" or " — озвучка пойдёт в основной канал; лучше включить «Диалоги» в настройках звука"))
+    end
     -- целостность пака: 20 случайных квестов и 10 книг — файл на месте? (тестер 26.09: первый файл есть, 752.ogg нет →
     -- аддон молча уходил в TTS; PlaySoundFile + StopSound(0) — беззвучная проверка «клиент видит файл»)
+    -- На 3.3.5a PlaySoundFile ничего не возвращает, поэтому «файл не найден» отличить нельзя и проба запустила бы музыку.
     local function sample(tbl, n, path)
+        if ns.legacy then return 0, {}, true end
         local keys = {}
         for k, e in pairs(tbl) do if e.d then keys[#keys + 1] = k end end  -- записи только со сдачей файла описания не имеют
         local missing, tested = {}, 0
@@ -142,27 +156,34 @@ function ns.SelfTest(print)
             tested = tested + 1
             if not willPlay then missing[#missing + 1] = tostring(k) end
         end
-        return tested, missing
+        return tested, missing, false
     end
     if pack and pack.quests then
-        local tested, missing = sample(pack.quests, 20, function(k, e)
+        local tested, missing, skipped = sample(pack.quests, 20, function(k, e)
             return "Interface\\AddOns\\CatQuest_Voices\\Sounds\\q\\" .. k .. (e.g and "_m" or "") .. ".ogg" end)
-        check(#missing == 0, ("файлы пака квестов на месте: %d из %d случайных"):format(tested - #missing, tested)
-            .. (#missing > 0 and (" — нет: " .. table.concat(missing, ", ") .. ". Пак неполный: распакуйте архив заново целиком") or ""))
+        if skipped then
+            check(true, "проверка файлов пака на 3.3.5a недоступна — слушайте пробный звук ниже")
+        else
+            check(#missing == 0, ("файлы пака квестов на месте: %d из %d случайных"):format(tested - #missing, tested)
+                .. (#missing > 0 and (" — нет: " .. table.concat(missing, ", ") .. ". Пак неполный: распакуйте архив заново целиком") or ""))
+        end
     end
     if pack and pack.books then
-        local tested, missing = sample(pack.books, 10, function(k, e)
+        local tested, missing, skipped = sample(pack.books, 10, function(k, e)
             return "Interface\\AddOns\\CatQuest_Books\\Sounds\\b\\" .. k .. (e.g and "_m" or "") .. ".ogg" end)
-        check(#missing == 0, ("файлы пака книг на месте: %d из %d случайных"):format(tested - #missing, tested)
-            .. (#missing > 0 and (" — нет: " .. table.concat(missing, ", ")) or ""))
+        if not skipped then
+            check(#missing == 0, ("файлы пака книг на месте: %d из %d случайных"):format(tested - #missing, tested)
+                .. (#missing > 0 and (" — нет: " .. table.concat(missing, ", ")) or ""))
+        end
     end
     if pack and pack.quests then
         local qid = next(pack.quests)
         for k, e in pairs(pack.quests) do if e.d then qid = k; break end end
         local channel = ns.SoundChannel()
-        local willPlay, handle = PlaySoundFile("Interface\\AddOns\\CatQuest_Voices\\Sounds\\q\\" .. qid .. (pack.quests[qid].g and "_m" or "") .. ".ogg", channel)
+        local path = "Interface\\AddOns\\CatQuest_Voices\\Sounds\\q\\" .. qid .. (pack.quests[qid].g and "_m" or "") .. ".ogg"
+        local willPlay, handle = ns.PlayVoiceFile(path, channel)
         check(willPlay, "пробный файл пака проигрывается (квест " .. qid .. ", канал " .. channel .. ") — должно быть слышно секунду")
-        if willPlay and handle then C_Timer.After(1, function() StopSound(handle, 0) end) end
+        if willPlay and handle and ns.StopVoiceHandle then C_Timer.After(1, function() ns.StopVoiceHandle(handle) end) end
     end
     check(ns.CompanionInstalled() or not CatQuestDB.bridge, "мост к компаньону согласован с маячком")
     print(("самопроверка: %d проверок пройдено"):format(ok))

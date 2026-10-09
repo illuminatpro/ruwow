@@ -68,7 +68,8 @@ local function SetPortrait(tex, meta)
         return
     end
     local display = meta.display or (meta.npcID and ns.NpcData and ns.NpcData[meta.npcID] and ns.NpcData[meta.npcID][3])
-    if display and SetPortraitTextureFromCreatureDisplayID then
+    -- ID облика в базе с нового клиента; на 3.3.5a портрет берём у NPC, с которым говорим
+    if display and not ns.legacy and SetPortraitTextureFromCreatureDisplayID then
         SetPortraitTextureFromCreatureDisplayID(tex, display)
         return
     end
@@ -93,6 +94,7 @@ local function ShowHead()
     if head:IsShown() and not head.hiding then return end
     head.hiding = nil
     head.fadeOut:Stop()
+    if not head._absAlpha then head:SetAlpha(0) end
     head:Show()
     head.fadeIn:Play()
 end
@@ -126,7 +128,7 @@ end
 ---------------------------------------------------------------------------
 local function Create()
     local db = CatQuestDB
-    head = CreateFrame("Frame", "CatQuestHead", UIParent, "BackdropTemplate")
+    head = CreateFrame("Frame", "CatQuestHead", UIParent, ns.Backdrop)
     head:SetSize(FULL_W, FULL_H)
     head:SetPoint(db.headPos.point, UIParent, db.headPos.point, db.headPos.x, db.headPos.y)
     head:SetScale(db.headScale or 1)
@@ -136,7 +138,7 @@ local function Create()
     head:EnableMouse(true)
     head:RegisterForDrag("LeftButton")
     head:SetBackdrop({
-        bgFile = "Interface\\DialogFrame\\UI-DialogBox-Background-Dark",
+        bgFile = "Interface\\DialogFrame\\UI-DialogBox-Background",
         edgeFile = "Interface\\Tooltips\\UI-Tooltip-Border",
         edgeSize = 14, insets = { left = 4, right = 4, top = 4, bottom = 4 },
     })
@@ -152,25 +154,28 @@ local function Create()
 
     -- плавно: появление 0.25 с, исчезание 0.35 с (резкое мигание головы между квестами раздражало)
     head.fadeIn = head:CreateAnimationGroup()
-    local a = head.fadeIn:CreateAnimation("Alpha"); a:SetFromAlpha(0); a:SetToAlpha(1); a:SetDuration(0.25)
+    local a = head.fadeIn:CreateAnimation("Alpha"); a:SetDuration(0.25)
+    head._absAlpha = ns.ApplyAlphaAnim(a, 0, 1)
     head.fadeOut = head:CreateAnimationGroup()
-    local b = head.fadeOut:CreateAnimation("Alpha"); b:SetFromAlpha(1); b:SetToAlpha(0); b:SetDuration(0.35)
+    local b = head.fadeOut:CreateAnimation("Alpha"); b:SetDuration(0.35)
+    ns.ApplyAlphaAnim(b, 1, 0)
     head.fadeOut:SetScript("OnFinished", function() head.hiding = nil; head:Hide() end)
 
     -- портрет круглый (SetMask), рамка — тоже из масок: золотой круг 60 → тёмный круг 56 → портрет 54.
     -- Текстуры-кольца из UI (MiniMap-TrackingBorder и т. п.) занимают лишь часть своего квадрата и не совпадают по размеру
     -- с портретом (26.09.2026: кольцо вышло меньше портрета и съехало) — поэтому только маски.
-    local MASK = "Interface\CharacterFrame\TempPortraitAlphaMask"
+    -- Круглая маска есть только на новых клиентах. На 3.3.5 портрет квадратный.
+    local MASK = "Interface\\CharacterFrame\\TempPortraitAlphaMask"
     head.ring = head:CreateTexture(nil, "BACKGROUND")
     head.ring:SetSize(60, 60)
     head.ring:SetPoint("LEFT", 9, 0)
     head.ring:SetColorTexture(0.85, 0.65, 0.13, 1)
-    if head.ring.SetMask then head.ring:SetMask(MASK) else head.ring:SetTexture(MASK); head.ring:SetVertexColor(0.85, 0.65, 0.13, 1) end
+    if head.ring.SetMask then head.ring:SetMask(MASK) end
     head.portraitBg = head:CreateTexture(nil, "BORDER")
     head.portraitBg:SetSize(56, 56)
     head.portraitBg:SetPoint("CENTER", head.ring, "CENTER", 0, 0)
     head.portraitBg:SetColorTexture(0.05, 0.05, 0.05, 1)
-    if head.portraitBg.SetMask then head.portraitBg:SetMask(MASK) else head.portraitBg:SetTexture(MASK); head.portraitBg:SetVertexColor(0, 0, 0, 0.8) end
+    if head.portraitBg.SetMask then head.portraitBg:SetMask(MASK) end
     head.portrait = head:CreateTexture(nil, "ARTWORK")
     head.portrait:SetSize(54, 54)
     head.portrait:SetPoint("CENTER", head.ring, "CENTER", 0, 0)
@@ -240,10 +245,10 @@ local function Create()
     head.skip:SetScript("OnClick", ns.Skip)
 
     -- субтитры: подложка фиксированной высоты (две строки), чтобы текст не прыгал по экрану от фразы к фразе
-    head.subBox = CreateFrame("Frame", nil, head, "BackdropTemplate")
+    head.subBox = CreateFrame("Frame", nil, head, ns.Backdrop)
     head.subBox:SetSize(520, 44)
     head.subBox:SetPoint("TOP", head, "BOTTOM", 0, -4)
-    head.subBox:SetBackdrop({ bgFile = "Interface\\Buttons\\WHITE8x8" })
+    head.subBox:SetBackdrop({ bgFile = "Interface\\Tooltips\\UI-Tooltip-Background" })
     head.subBox:SetBackdropColor(0, 0, 0, 0.55)
     head.subtitle = head.subBox:CreateFontString(nil, "OVERLAY", "GameFontHighlight")
     head.subtitle:SetPoint("TOPLEFT", 10, -6)

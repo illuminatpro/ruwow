@@ -97,8 +97,9 @@ ns.OnHistoryChanged = Refresh
 ns.OnQueueChanged = function() if tab == "queue" then Refresh() end end
 
 local function CreateWindow()
-    win = CreateFrame("Frame", "CatQuestWindow", UIParent, "BasicFrameTemplateWithInset")
-    win:SetSize(380, 100 + ROWS * ROW_H)
+    -- BasicFrameTemplateWithInset есть только на новых клиентах. Рамка собирается вручную.
+    win = CreateFrame("Frame", "CatQuestWindow", UIParent, ns.Backdrop)
+    win:SetSize(380, 124 + ROWS * ROW_H)
     win:SetPoint("CENTER")
     win:SetFrameStrata("DIALOG")
     win:SetMovable(true)
@@ -107,15 +108,27 @@ local function CreateWindow()
     win:RegisterForDrag("LeftButton")
     win:SetScript("OnDragStart", win.StartMoving)
     win:SetScript("OnDragStop", win.StopMovingOrSizing)
+    if win.SetBackdrop then
+        win:SetBackdrop({
+            bgFile = "Interface\\DialogFrame\\UI-DialogBox-Background",
+            edgeFile = "Interface\\DialogFrame\\UI-DialogBox-Border",
+            tile = true, tileSize = 32, edgeSize = 32,
+            insets = { left = 11, right = 12, top = 12, bottom = 11 },
+        })
+        win:SetBackdropColor(0, 0, 0, 1)
+    end
     tinsert(UISpecialFrames, "CatQuestWindow") -- закрывается по Esc
+
+    local close = CreateFrame("Button", nil, win, "UIPanelCloseButton")
+    close:SetPoint("TOPRIGHT", -2, -2)
 
     local title = win.TitleText or win:CreateFontString(nil, "OVERLAY", "GameFontHighlight")
     title:SetText("CatQuest")
-    if not win.TitleText then title:SetPoint("TOP", 0, -5) end
+    if not win.TitleText then title:SetPoint("TOP", 0, -14) end
 
     win.tabQuests = CreateFrame("Button", nil, win, "UIPanelButtonTemplate")
     win.tabQuests:SetSize(96, 22)
-    win.tabQuests:SetPoint("TOPLEFT", 12, -30)
+    win.tabQuests:SetPoint("TOPLEFT", 16, -40)
     win.tabQuests:SetText("Мои квесты")
     win.tabQuests:SetScript("OnClick", function() tab, offset = "quests", 0; Refresh() end)
 
@@ -141,7 +154,7 @@ local function CreateWindow()
     for i = 1, ROWS do
         local row = CreateFrame("Button", nil, win)
         row:SetSize(352, ROW_H)
-        row:SetPoint("TOPLEFT", 14, -58 - (i - 1) * ROW_H)
+        row:SetPoint("TOPLEFT", 16, -68 - (i - 1) * ROW_H)
         row:SetHighlightTexture("Interface\\QuestFrame\\UI-QuestTitleHighlight", "ADD")
         row.label = row:CreateFontString(nil, "OVERLAY", "GameFontNormal")
         row.label:SetPoint("TOPLEFT", 4, -1)

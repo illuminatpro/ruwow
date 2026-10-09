@@ -23,12 +23,18 @@ local function Heard(p)
 end
 
 local function PlayerPos()
-    if not (C_Map and C_Map.GetBestMapForUnit and C_Map.GetPlayerMapPosition) then return nil end
-    local map = C_Map.GetBestMapForUnit("player")
-    if not map then return nil end
-    local pos = C_Map.GetPlayerMapPosition(map, "player")
-    if not pos then return nil end
-    return map, pos.x * 100, pos.y * 100
+    if C_Map and C_Map.GetBestMapForUnit and C_Map.GetPlayerMapPosition then
+        local map = C_Map.GetBestMapForUnit("player")
+        if map then
+            local pos = C_Map.GetPlayerMapPosition(map, "player")
+            if pos then return map, pos.x * 100, pos.y * 100 end
+        end
+    end
+    -- 3.3.5a: areaID и доля карты 0–1. Точек по координатам в паке нет, имена зон работают без этого.
+    if ns.LegacyMapPos then
+        local map, x, y = ns.LegacyMapPos()
+        if map and x and y and (x > 0 or y > 0) then return map, x * 100, y * 100 end
+    end
 end
 
 -- Точки по имени зоны/подзоны (LoreZones.lua): игра сама говорит, куда вошёл игрок, координаты не нужны.
@@ -110,12 +116,16 @@ local function CreateButton()
     -- Появление новой точки: свиток «выплывает» (масштаб 0.6→1 с отскоком, прозрачность 0→1), свечение мягко пульсирует,
     -- пока не послушал. Заметно, но без крика.
     b.appear = b:CreateAnimationGroup()
-    local a1 = b.appear:CreateAnimation("Alpha"); a1:SetFromAlpha(0); a1:SetToAlpha(1); a1:SetDuration(0.35); a1:SetOrder(1)
-    local s1 = b.appear:CreateAnimation("Scale"); s1:SetScaleFrom(0.6, 0.6); s1:SetScaleTo(1.12, 1.12); s1:SetDuration(0.3); s1:SetOrder(1); s1:SetSmoothing("OUT")
-    local s2 = b.appear:CreateAnimation("Scale"); s2:SetScaleFrom(1.12, 1.12); s2:SetScaleTo(1, 1); s2:SetDuration(0.2); s2:SetOrder(2); s2:SetSmoothing("IN_OUT")
+    local a1 = b.appear:CreateAnimation("Alpha"); a1:SetDuration(0.35); a1:SetOrder(1)
+    b._absAlpha = ns.ApplyAlphaAnim(a1, 0, 1)
+    local s1 = b.appear:CreateAnimation("Scale"); s1:SetDuration(0.3); s1:SetOrder(1); s1:SetSmoothing("OUT")
+    ns.ApplyScaleAnim(s1, 0.6, 0.6, 1.12, 1.12)
+    local s2 = b.appear:CreateAnimation("Scale"); s2:SetDuration(0.2); s2:SetOrder(2); s2:SetSmoothing("IN_OUT")
+    ns.ApplyScaleAnim(s2, 1.12, 1.12, 1, 1)
     b.pulse = b.glow:CreateAnimationGroup()
     b.pulse:SetLooping("BOUNCE")
-    local p1 = b.pulse:CreateAnimation("Alpha"); p1:SetFromAlpha(0.15); p1:SetToAlpha(0.6); p1:SetDuration(1.4); p1:SetSmoothing("IN_OUT")
+    local p1 = b.pulse:CreateAnimation("Alpha"); p1:SetDuration(1.4); p1:SetSmoothing("IN_OUT")
+    ns.ApplyAlphaAnim(p1, 0.15, 0.6)
     b:SetScript("OnClick", function() ns.LoreSpeak(nearby) end)
     b:SetScript("OnEnter", function(self)
         GameTooltip:SetOwner(self, "ANCHOR_BOTTOM")
@@ -141,9 +151,11 @@ local function Tick()
             button.label:SetText(p.title)
             button:Show()
             if Heard(p) then
+                button:SetAlpha(1)
                 button.pulse:Stop()
                 button.glow:Hide()
             else
+                if not button._absAlpha then button:SetAlpha(0) end
                 button.glow:Show()
                 button.appear:Stop()
                 button.appear:Play()
