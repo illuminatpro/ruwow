@@ -177,14 +177,36 @@ function ns.ApplyScaleAnim(anim, fx, fy, tx, ty)
 end
 
 ---------------------------------------------------------------------------
--- Звук. У 3.3.5 PlaySoundFile ничего не возвращает и звук нельзя остановить.
--- PlayMusic / StopMusic останавливаются, поэтому «Стоп» и очередь работают.
--- Громкость — ползунок «Музыка»; на время реплики музыка локации замолкает.
+-- Звук. На 3.3.5 PlaySoundFile ничего не возвращает и дорожку нельзя остановить,
+-- а PlayMusic файл зацикливает. Так же, как WowVoice: ogg играем через PlayMusic
+-- (путь не переписываем в mp3 — клиент Sirus/3.3.5 этот ogg воспроизводит).
+-- Громкость — ползунок «Музыка». StopMusic на Sirus файл не обрывает, поэтому
+-- после реплики на мгновение выключаем музыкальный канал.
 ---------------------------------------------------------------------------
 function ns.DialogShown()
     return (QuestFrame and QuestFrame:IsShown())
         or (GossipFrame and GossipFrame:IsShown())
         or (ItemTextFrame and ItemTextFrame:IsShown())
+end
+
+local function LegacyForceMusic()
+    if not (GetCVar and SetCVar) then return end
+    if ns._musicSavedVol == nil then
+        ns._musicSavedVol = GetCVar("Sound_MusicVolume")
+        ns._musicSavedEnable = GetCVar("Sound_EnableMusic")
+    end
+    SetCVar("Sound_EnableMusic", "1")
+    local vol = tonumber(ns._musicSavedVol) or 0
+    if ns._musicSavedEnable ~= "1" or vol < 0.15 then
+        SetCVar("Sound_MusicVolume", "1")
+    end
+end
+
+local function LegacyRestoreMusic()
+    if not SetCVar or ns._musicSavedVol == nil then return end
+    SetCVar("Sound_MusicVolume", ns._musicSavedVol)
+    SetCVar("Sound_EnableMusic", ns._musicSavedEnable or "1")
+    ns._musicSavedVol, ns._musicSavedEnable = nil, nil
 end
 
 function ns.PlayVoiceFile(path, channel)
@@ -194,24 +216,10 @@ function ns.PlayVoiceFile(path, channel)
         if willPlay then return true, handle end
         return false, nil
     end
-    -- Озвучка автора лежит в ogg. Движок 3.3.5 этот формат не декодирует
-    -- (ogg добавили в 4.0.1). Тот же файл в mp3 клиент играет.
-    if path:lower():sub(-4) == ".ogg" then
-        path = path:sub(1, -5) .. ".mp3"
-        if not ns._oggNoted then
-            ns._oggNoted = true
-            DEFAULT_CHAT_FRAME:AddMessage("|cffffb347CatQuest:|r клиент 3.3.5 не воспроизводит ogg. "
-                .. "Нужен mp3 с тем же именем рядом с ogg, например Sounds\\q\\7.mp3. "
-                .. "После копирования mp3 игру надо полностью перезапустить.")
-        end
-    end
-    -- PlayMusic подменяет музыку и на этом клиенте закрывает открытое окно квеста.
-    -- Пока NPC на экране — PlaySoundFile. Вне диалога — PlayMusic, его можно остановить.
-    if ns.DialogShown() then
-        PlaySoundFile(path)
-        return true, "sound"
-    end
-    if ns._usingMusic and StopMusic then StopMusic() end
+    -- 3.3.5: у PlaySoundFile один аргумент и дорожку нельзя остановить, поэтому
+    -- реплика идёт через PlayMusic — тем же вызовом, что ogg в WowVoice.
+    -- Файл не переписываем в mp3: пак автора лежит в ogg и клиент его играет.
+    LegacyForceMusic()
     PlayMusic(path)
     ns._usingMusic = true
     return true, "music"
@@ -225,14 +233,19 @@ function ns.StopVoiceHandle(handle)
         if not ns.legacy then return end
         local token = (ns._musicToken or 0) + 1
         ns._musicToken = token
-        ns.After(0.8, function()
+        -- Короткий зазор: если очередь сразу ставит следующий файл, глушить нельзя.
+        -- Иначе PlayMusic уже зациклил конец реплики — обрываем канал, как /wv stopmode cvar.
+        ns.After(0.05, function()
             if ns._musicToken ~= token or ns._usingMusic then return end
             if ns.state and (ns.state.playing or ns.state.pending) then return end
             if ns.queue and #ns.queue > 0 then return end
-            if GetCVar and SetCVar and GetCVar("Sound_EnableMusic") == "1" then
-                SetCVar("Sound_EnableMusic", "0")
-                SetCVar("Sound_EnableMusic", "1")
-            end
+            if not SetCVar then return end
+            SetCVar("Sound_EnableMusic", "0")
+            ns.After(0.25, function()
+                if ns._musicToken ~= token or ns._usingMusic then return end
+                if ns.state and (ns.state.playing or ns.state.pending) then return end
+                LegacyRestoreMusic()
+            end)
         end)
         return
     end

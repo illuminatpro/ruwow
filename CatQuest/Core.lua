@@ -353,7 +353,7 @@ local function PlayTTS(text, sex)
             ttsWarned = true
             if ns.legacy then
                 Print("этот текст не найден в паке озвучки, а встроенного голоса в 3.3.5 нет. На голове только субтитры. "
-                    .. "Проверка звука: /cq pack 7 — должен играть Sounds\\q\\7.mp3 (ogg клиент не умеет).")
+                    .. "Проверка звука: /cq pack 7 — должен играть Sounds\\q\\7.ogg. Громкость — ползунок «Музыка».")
             else
                 Print("встроенный TTS недоступен в этом клиенте — тексты без озвучки в паке пропускаются")
             end
@@ -1017,8 +1017,7 @@ SlashCmdList.CATQUEST = function(msg)
         else
             Stop()
             local title = C_QuestLog.GetTitleForQuestID and C_QuestLog.GetTitleForQuestID(id)
-            Print(("пак: %s [%s] %.0f с%s"):format(title or id, tostring(pack[id].v), pack[id].d or 0,
-                ns.legacy and " (3.3.5 играет mp3, не ogg)" or ""))
+            Print(("пак: %s [%s] %.0f с"):format(title or id, tostring(pack[id].v), pack[id].d or 0))
             if not pack[id].d then
                 Print("в паке только сдача этого квеста (описания нет)")
             elseif not PlayPack({ quest = id, kind = "detail" }) then
