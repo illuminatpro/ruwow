@@ -154,7 +154,9 @@ end
 -- Анимации: в 3.3.5 альфа задаётся приращением, а не From/To
 ---------------------------------------------------------------------------
 function ns.ApplyAlphaAnim(anim, from, to)
-    if anim.SetFromAlpha then
+    -- На 3.3.5 движок анимации смотрит только на SetChange. Если у клиента есть
+    -- пустой SetFromAlpha (бэкпорт), смена остаётся 0 и анимация кончается в тот же кадр.
+    if not ns.legacy and anim.SetFromAlpha then
         anim:SetFromAlpha(from)
         anim:SetToAlpha(to)
         return true
@@ -179,12 +181,24 @@ end
 -- PlayMusic / StopMusic останавливаются, поэтому «Стоп» и очередь работают.
 -- Громкость — ползунок «Музыка»; на время реплики музыка локации замолкает.
 ---------------------------------------------------------------------------
+function ns.DialogShown()
+    return (QuestFrame and QuestFrame:IsShown())
+        or (GossipFrame and GossipFrame:IsShown())
+        or (ItemTextFrame and ItemTextFrame:IsShown())
+end
+
 function ns.PlayVoiceFile(path, channel)
     if not ns.legacy then
         channel = channel or (ns.SoundChannel and ns.SoundChannel()) or "Master"
         local willPlay, handle = PlaySoundFile(path, channel)
         if willPlay then return true, handle end
         return false, nil
+    end
+    -- PlayMusic подменяет музыку локации. На этом клиенте вызов в момент открытого
+    -- окна квеста закрывает диалог. Пока NPC на экране — обычный файл, его не остановить.
+    if ns.DialogShown() then
+        PlaySoundFile(path)
+        return true, "sound"
     end
     if ns._usingMusic and StopMusic then StopMusic() end
     PlayMusic(path)
@@ -193,6 +207,7 @@ function ns.PlayVoiceFile(path, channel)
 end
 
 function ns.StopVoiceHandle(handle)
+    if handle == "sound" then return end
     if handle == "music" or (ns.legacy and ns._usingMusic and (handle == nil or handle == "music")) then
         ns._usingMusic = false
         if StopMusic then StopMusic() end

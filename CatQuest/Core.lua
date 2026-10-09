@@ -334,6 +334,16 @@ ns.Print = Print
 ns.TextHash, ns.CleanText = TextHash, CleanText  -- для самопроверки (QA.lua)
 
 local ttsWarned
+local function PlaySubtitles(text)
+    local est = math.max(4, 2 + strlenutf8(text) / 14)
+    SetPlaying(true, "subs", est)
+    state.timer = ns.NewTimer(est, function()
+        state.timer = nil
+        Finished()
+    end)
+    return true
+end
+
 local function PlayTTS(text, sex)
     -- На Forever встроенный TTS без голосов (SpeakText молча падает со статусом 6): не делаем вид, что играем,
     -- иначе «говорящая голова» вылезает на тишину.
@@ -341,8 +351,14 @@ local function PlayTTS(text, sex)
     if not (C_VoiceChat and C_VoiceChat.SpeakText) or not voices or #voices == 0 then
         if not ttsWarned then
             ttsWarned = true
-            Print("встроенный TTS недоступен в этом клиенте — тексты без озвучки в паке пропускаются")
+            if ns.legacy then
+                Print("в WoW 3.3.5 нет встроенного голоса. Звук берётся из файлов CatQuest_Voices\\Sounds\\q\\. "
+                    .. "Если файла для этого текста нет, на голове остаются только субтитры.")
+            else
+                Print("встроенный TTS недоступен в этом клиенте — тексты без озвучки в паке пропускаются")
+            end
         end
+        if ns.legacy then return PlaySubtitles(text) end
         return false
     end
     C_VoiceChat.SpeakText(PickVoice(sex), text, db.rate, db.volume, false)
@@ -615,7 +631,11 @@ end
 local handlers = {}
 
 function handlers.QUEST_DETAIL()
-    OfferFromNpc(QuestDetailText(), "detail", CurrentQuestID(), db.autoDetail and not db.readAfterAccept, GetQuestText and GetQuestText())
+    -- Не в сам кадр события: чтение текста, модель NPC и звук в QUEST_DETAIL на 3.3.5 закрывают окно квеста.
+    ns.After(0, function()
+        if not (QuestFrame and QuestFrame:IsShown()) then return end
+        OfferFromNpc(QuestDetailText(), "detail", CurrentQuestID(), db.autoDetail and not db.readAfterAccept, GetQuestText and GetQuestText())
+    end)
 end
 
 -- Режим «читать после принятия»: текст NPC сохранён при показе окна, читаем его, когда квест взят.
@@ -643,26 +663,41 @@ function handlers.QUEST_ACCEPTED(a, b)
 end
 
 function handlers.QUEST_PROGRESS()
-    OfferFromNpc(GetProgressText(), "progress", CurrentQuestID(), db.autoProgress)
+    ns.After(0, function()
+        if not (QuestFrame and QuestFrame:IsShown()) then return end
+        OfferFromNpc(GetProgressText(), "progress", CurrentQuestID(), db.autoProgress)
+    end)
 end
 
 function handlers.QUEST_COMPLETE()
-    OfferFromNpc(GetRewardText(), "complete", CurrentQuestID(), db.autoComplete)
+    ns.After(0, function()
+        if not (QuestFrame and QuestFrame:IsShown()) then return end
+        OfferFromNpc(GetRewardText(), "complete", CurrentQuestID(), db.autoComplete)
+    end)
 end
 
 function handlers.QUEST_GREETING()
-    OfferFromNpc(GetGreetingText(), "greeting", nil, db.autoGreeting)
+    ns.After(0, function()
+        if not (QuestFrame and QuestFrame:IsShown()) then return end
+        OfferFromNpc(GetGreetingText(), "greeting", nil, db.autoGreeting)
+    end)
 end
 
 function handlers.GOSSIP_SHOW()
-    local text = C_GossipInfo and C_GossipInfo.GetText and C_GossipInfo.GetText()
-    OfferFromNpc(text, "gossip", nil, db.autoGossip)
+    ns.After(0, function()
+        if not (GossipFrame and GossipFrame:IsShown()) then return end
+        local text = C_GossipInfo and C_GossipInfo.GetText and C_GossipInfo.GetText()
+        OfferFromNpc(text, "gossip", nil, db.autoGossip)
+    end)
 end
 
 function handlers.ITEM_TEXT_READY()
-    local text = ItemTextGetText()
-    if ns.ReportBook and text then pcall(ns.ReportBook, text, TextHash(CleanText(text))) end
-    Offer(text, { kind = "book" }, db.autoBooks)
+    ns.After(0, function()
+        if not (ItemTextFrame and ItemTextFrame:IsShown()) then return end
+        local text = ItemTextGetText()
+        if ns.ReportBook and text then pcall(ns.ReportBook, text, TextHash(CleanText(text))) end
+        Offer(text, { kind = "book" }, db.autoBooks)
+    end)
 end
 
 local function OnWindowClosed()
@@ -785,7 +820,7 @@ UpdateUI = function()
     end
     if ns.UpdateHead then ns.UpdateHead() end
     if bar then
-        local labels = { file = "Нейро-голос", pack = "Озвучка", bridge = "Компаньон", tts = "TTS" }
+        local labels = { file = "Нейро-голос", pack = "Озвучка", bridge = "Компаньон", tts = "TTS", subs = "Субтитры" }
         bar.label:SetText(labels[state.source] or "Озвучка")
         bar:SetShown(state.playing)
     end

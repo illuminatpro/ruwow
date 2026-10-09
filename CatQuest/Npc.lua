@@ -97,6 +97,12 @@ function ns.IdentifyNpc(unit, callback)
         return
     end
 
+    -- SetUnit("npc") у скрытой модели на 3.3.5 сбрасывает цель, и окно квеста сразу закрывается.
+    if ns.legacy and unit == "npc" and ns.DialogShown and ns.DialogShown() then
+        callback(info)
+        return
+    end
+
     local m = Probe()
     m:ClearModel()
     m:SetUnit(unit)

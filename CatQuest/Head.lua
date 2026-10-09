@@ -85,7 +85,7 @@ local function FormatTime(sec)
     return ("%d:%02d"):format(math.floor(sec / 60), sec % 60)
 end
 
-local SOURCE_LABEL = { pack = "озвучка из пака", file = "нейро-голос", bridge = "компаньон", tts = "встроенный TTS" }
+local SOURCE_LABEL = { pack = "озвучка из пака", file = "нейро-голос", bridge = "компаньон", tts = "встроенный TTS", subs = "только субтитры" }
 
 ---------------------------------------------------------------------------
 -- Появление/исчезание
@@ -159,7 +159,12 @@ local function Create()
     head.fadeOut = head:CreateAnimationGroup()
     local b = head.fadeOut:CreateAnimation("Alpha"); b:SetDuration(0.35)
     ns.ApplyAlphaAnim(b, 1, 0)
-    head.fadeOut:SetScript("OnFinished", function() head.hiding = nil; head:Hide() end)
+    -- Stop() на 3.3.5 иногда вызывает OnFinished. Прячем голову только если сами запросили исчезновение.
+    head.fadeOut:SetScript("OnFinished", function()
+        if not head.hiding then return end
+        head.hiding = nil
+        head:Hide()
+    end)
 
     -- портрет круглый (SetMask), рамка — тоже из масок: золотой круг 60 → тёмный круг 56 → портрет 54.
     -- Текстуры-кольца из UI (MiniMap-TrackingBorder и т. п.) занимают лишь часть своего квадрата и не совпадают по размеру
@@ -346,7 +351,7 @@ function ns.UpdateHead()
         local title = meta.title or KIND_LABEL[meta.kind] or ""
         -- источник не из пака помечаем: иначе голова с молчащим компаньоном выглядит как «озвучка не запустилась» (26.09.2026)
         local src = ns.state and ns.state.source
-        local srcLabel = src == "bridge" and "компаньон" or src == "tts" and "TTS" or nil
+        local srcLabel = src == "bridge" and "компаньон" or src == "tts" and "TTS" or src == "subs" and "субтитры" or nil
         local tail = story or srcLabel
         head.title:SetText(tail and (title ~= "" and (title .. "  |cff9d9d9d" .. tail .. "|r") or tail) or title)
         SetPortrait(head.portrait, meta)
