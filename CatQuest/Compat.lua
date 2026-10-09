@@ -194,8 +194,19 @@ function ns.PlayVoiceFile(path, channel)
         if willPlay then return true, handle end
         return false, nil
     end
-    -- PlayMusic подменяет музыку локации. На этом клиенте вызов в момент открытого
-    -- окна квеста закрывает диалог. Пока NPC на экране — обычный файл, его не остановить.
+    -- Озвучка автора лежит в ogg. Движок 3.3.5 этот формат не декодирует
+    -- (ogg добавили в 4.0.1). Тот же файл в mp3 клиент играет.
+    if path:lower():sub(-4) == ".ogg" then
+        path = path:sub(1, -5) .. ".mp3"
+        if not ns._oggNoted then
+            ns._oggNoted = true
+            DEFAULT_CHAT_FRAME:AddMessage("|cffffb347CatQuest:|r клиент 3.3.5 не воспроизводит ogg. "
+                .. "Нужен mp3 с тем же именем рядом с ogg, например Sounds\\q\\7.mp3. "
+                .. "После копирования mp3 игру надо полностью перезапустить.")
+        end
+    end
+    -- PlayMusic подменяет музыку и на этом клиенте закрывает открытое окно квеста.
+    -- Пока NPC на экране — PlaySoundFile. Вне диалога — PlayMusic, его можно остановить.
     if ns.DialogShown() then
         PlaySoundFile(path)
         return true, "sound"
@@ -481,6 +492,14 @@ local function Lookup(kind, text, npcID)
     local hit = full[n]
     if not hit and #n > 48 then hit = pre[n:sub(1, 48)] end
     return Pick(hit, kind, npcID)
+end
+
+function ns.QuestIDFromText(text, kind, npcID)
+    ns.EnsureQuestTextIndex()
+    local id = Lookup(kind or "detail", text, npcID)
+    if id then return id end
+    if kind == "complete" then return Lookup("detail", text, npcID) end
+    if kind == "detail" or kind == "log" or not kind then return Lookup("complete", text, npcID) end
 end
 
 function ns.QuestIDFromOpenWindow()

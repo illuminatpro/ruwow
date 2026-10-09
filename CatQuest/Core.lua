@@ -352,8 +352,8 @@ local function PlayTTS(text, sex)
         if not ttsWarned then
             ttsWarned = true
             if ns.legacy then
-                Print("в WoW 3.3.5 нет встроенного голоса. Звук берётся из файлов CatQuest_Voices\\Sounds\\q\\. "
-                    .. "Если файла для этого текста нет, на голове остаются только субтитры.")
+                Print("этот текст не найден в паке озвучки, а встроенного голоса в 3.3.5 нет. На голове только субтитры. "
+                    .. "Проверка звука: /cq pack 7 — должен играть Sounds\\q\\7.mp3 (ogg клиент не умеет).")
             else
                 Print("встроенный TTS недоступен в этом клиенте — тексты без озвучки в паке пропускаются")
             end
@@ -428,6 +428,10 @@ local function Speak(text, meta)
     state.offerText, state.offerMeta = nil, nil
     local hash = TextHash(text)
     meta.hash = hash
+    if (not meta.quest or meta.quest == 0) and ns.QuestIDFromText then
+        local kind = (meta.kind == "complete" or meta.kind == "progress") and meta.kind or "detail"
+        meta.quest = ns.QuestIDFromText(meta.desc or text, kind, meta.npcID)
+    end
     Remember(hash, text, meta)
     AddHistory(text, meta)
     if PlayPack(meta) then return true end
@@ -631,10 +635,11 @@ end
 local handlers = {}
 
 function handlers.QUEST_DETAIL()
-    -- Не в сам кадр события: чтение текста, модель NPC и звук в QUEST_DETAIL на 3.3.5 закрывают окно квеста.
+    -- Текст снимаем сразу: окно на 3.3.5 иногда закрывается в этом же кадре.
+    -- Модель и звук — на следующем, чтобы не сбрасывать диалог NPC.
+    local text, desc, questID = QuestDetailText(), GetQuestText and GetQuestText(), CurrentQuestID()
     ns.After(0, function()
-        if not (QuestFrame and QuestFrame:IsShown()) then return end
-        OfferFromNpc(QuestDetailText(), "detail", CurrentQuestID(), db.autoDetail and not db.readAfterAccept, GetQuestText and GetQuestText())
+        OfferFromNpc(text, "detail", questID, db.autoDetail and not db.readAfterAccept, desc)
     end)
 end
 
@@ -663,38 +668,36 @@ function handlers.QUEST_ACCEPTED(a, b)
 end
 
 function handlers.QUEST_PROGRESS()
+    local text, questID = GetProgressText(), CurrentQuestID()
     ns.After(0, function()
-        if not (QuestFrame and QuestFrame:IsShown()) then return end
-        OfferFromNpc(GetProgressText(), "progress", CurrentQuestID(), db.autoProgress)
+        OfferFromNpc(text, "progress", questID, db.autoProgress)
     end)
 end
 
 function handlers.QUEST_COMPLETE()
+    local text, questID = GetRewardText(), CurrentQuestID()
     ns.After(0, function()
-        if not (QuestFrame and QuestFrame:IsShown()) then return end
-        OfferFromNpc(GetRewardText(), "complete", CurrentQuestID(), db.autoComplete)
+        OfferFromNpc(text, "complete", questID, db.autoComplete)
     end)
 end
 
 function handlers.QUEST_GREETING()
+    local text = GetGreetingText()
     ns.After(0, function()
-        if not (QuestFrame and QuestFrame:IsShown()) then return end
-        OfferFromNpc(GetGreetingText(), "greeting", nil, db.autoGreeting)
+        OfferFromNpc(text, "greeting", nil, db.autoGreeting)
     end)
 end
 
 function handlers.GOSSIP_SHOW()
+    local text = C_GossipInfo and C_GossipInfo.GetText and C_GossipInfo.GetText()
     ns.After(0, function()
-        if not (GossipFrame and GossipFrame:IsShown()) then return end
-        local text = C_GossipInfo and C_GossipInfo.GetText and C_GossipInfo.GetText()
         OfferFromNpc(text, "gossip", nil, db.autoGossip)
     end)
 end
 
 function handlers.ITEM_TEXT_READY()
+    local text = ItemTextGetText()
     ns.After(0, function()
-        if not (ItemTextFrame and ItemTextFrame:IsShown()) then return end
-        local text = ItemTextGetText()
         if ns.ReportBook and text then pcall(ns.ReportBook, text, TextHash(CleanText(text))) end
         Offer(text, { kind = "book" }, db.autoBooks)
     end)
@@ -1014,7 +1017,8 @@ SlashCmdList.CATQUEST = function(msg)
         else
             Stop()
             local title = C_QuestLog.GetTitleForQuestID and C_QuestLog.GetTitleForQuestID(id)
-            Print(("пак: %s [%s] %.0f с"):format(title or id, tostring(pack[id].v), pack[id].d or 0))
+            Print(("пак: %s [%s] %.0f с%s"):format(title or id, tostring(pack[id].v), pack[id].d or 0,
+                ns.legacy and " (3.3.5 играет mp3, не ogg)" or ""))
             if not pack[id].d then
                 Print("в паке только сдача этого квеста (описания нет)")
             elseif not PlayPack({ quest = id, kind = "detail" }) then
