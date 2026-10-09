@@ -281,7 +281,7 @@ local function Create()
     head:SetScript("OnLeave", function(self)
         GameTooltip_Hide()
         self.hovered = false
-        C_Timer.After(0.8, function() if not head.hovered then Layout(WantExpanded()) end end)
+        ns.After(0.8, function() if not head.hovered then Layout(WantExpanded()) end end)
     end)
 
     function head:UpdateButtons()
@@ -332,7 +332,7 @@ function ns.UpdateHead()
     local st = ns.state
     local n = #ns.queue
     if not st.playing and not st.pending and n == 0 then
-        C_Timer.After(1.5, function()
+        ns.After(1.5, function()
             local s = ns.state
             if not s.playing and not s.pending and #ns.queue == 0 then HideHead() end
         end)

@@ -173,7 +173,7 @@ local function Tick()
     end
 end
 
-C_Timer.NewTicker(POLL, function()
+ns.NewTicker(POLL, function()
     local ok, e = pcall(Tick)  -- раз в секунду: ошибка не должна сыпаться в чат каждую секунду
     if not ok and ns.LogError then ns.LogError("Lore.Tick", e) end
 end)

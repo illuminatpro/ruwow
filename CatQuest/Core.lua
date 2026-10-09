@@ -227,7 +227,7 @@ local function PlayFile(hash)
     if not willPlay then return false end
     state.soundHandle = handle
     SetPlaying(true, "file", dur)
-    state.timer = C_Timer.NewTimer(dur + 0.3, function()
+    state.timer = ns.NewTimer(dur + 0.3, function()
         state.timer = nil
         Finished()
     end)
@@ -311,7 +311,7 @@ local function PlayPack(meta)
     end
     state.voice = entry.v  -- для подсказки на голове
     SetPlaying(true, "pack", entry.d)
-    state.timer = C_Timer.NewTimer(entry.d + 0.3, function()
+    state.timer = ns.NewTimer(entry.d + 0.3, function()
         state.timer = nil
         Finished()
     end)
@@ -348,7 +348,7 @@ local function PlayTTS(text, sex)
     C_VoiceChat.SpeakText(PickVoice(sex), text, db.rate, db.volume, false)
     SetPlaying(true, "tts", strlenutf8(text) / 14)
     -- страховка: если событие FINISHED/FAILED не придёт (Forever «молча» падает), не висеть с playing=true
-    state.timer = C_Timer.NewTimer(strlenutf8(text) / 14 + 5, function()
+    state.timer = ns.NewTimer(strlenutf8(text) / 14 + 5, function()
         state.timer = nil
         if state.source == "tts" then Finished() end
     end)
@@ -422,7 +422,7 @@ local function Speak(text, meta)
         -- Когда компаньон закончит, мы не узнаем, поэтому прячем панель по оценке (~14 символов/сек).
         local est = 2 + strlenutf8(text) / 14
         SetPlaying(true, "bridge", est)
-        state.timer = C_Timer.NewTimer(est, function()
+        state.timer = ns.NewTimer(est, function()
             state.timer = nil
             Finished()
         end)
@@ -638,7 +638,7 @@ function handlers.QUEST_ACCEPTED(a, b)
     if db.readAfterAccept and db.autoDetail and questID and questID > 0 then
         -- через очередь: несколько принятых подряд читаются по одному, текущее не обрывается.
         -- Чуть позже, чем QUEST_FINISHED окна: иначе «останавливать при закрытии окна» обрывает только что начатое чтение
-        C_Timer.After(0.1, function() ns.ReadQuest(questID, true) end)
+        ns.After(0.1, function() ns.ReadQuest(questID, true) end)
     end
 end
 
@@ -1085,7 +1085,7 @@ events:SetScript("OnEvent", function(self, event, ...)
             if db.bgCVarSet and SetCVar then SetCVar("Sound_EnableSoundWhenGameIsInBG", "0"); db.bgCVarSet = nil end
             -- Диагностика: переживают ли сохранения перезапуск игры.
             db.loads = (db.loads or 0) + 1
-            C_Timer.After(3, Welcome)
+            ns.After(3, Welcome)
         elseif db then
             HookQuestLog() -- журнал квестов может грузиться отдельным аддоном
         end

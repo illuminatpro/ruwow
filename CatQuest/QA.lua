@@ -183,7 +183,7 @@ function ns.SelfTest(print)
         local path = "Interface\\AddOns\\CatQuest_Voices\\Sounds\\q\\" .. qid .. (pack.quests[qid].g and "_m" or "") .. ".ogg"
         local willPlay, handle = ns.PlayVoiceFile(path, channel)
         check(willPlay, "пробный файл пака проигрывается (квест " .. qid .. ", канал " .. channel .. ") — должно быть слышно секунду")
-        if willPlay and handle and ns.StopVoiceHandle then C_Timer.After(1, function() ns.StopVoiceHandle(handle) end) end
+        if willPlay and handle and ns.StopVoiceHandle then ns.After(1, function() ns.StopVoiceHandle(handle) end) end
     end
     check(ns.CompanionInstalled() or not CatQuestDB.bridge, "мост к компаньону согласован с маячком")
     print(("самопроверка: %d проверок пройдено"):format(ok))

@@ -98,14 +98,20 @@ if not strlenutf8 then
 end
 
 ---------------------------------------------------------------------------
--- Таймеры (C_Timer появился в 6.0)
+-- Таймеры. В чистом 3.3.5a C_Timer нет. На клиентах с SharedXML/C_TimerAugment.lua
+-- глобальный C_Timer есть, но его NewTicker/After сравнивают число с функцией и
+-- роняют интерфейс (C_TimerAugment.lua:36). Свой планировщик не вызывает его и не
+-- подменяет глобал, поэтому чужие аддоны остаются на клиентской реализации.
 ---------------------------------------------------------------------------
-if not C_Timer then
+do
     local runner = CreateFrame("Frame")
     local timers = {}
     runner:Hide()
     runner:SetScript("OnUpdate", function(_, elapsed)
-        if #timers == 0 then return end
+        if #timers == 0 then
+            runner:Hide()
+            return
+        end
         for i = #timers, 1, -1 do
             local t = timers[i]
             if t.cancelled then
@@ -119,25 +125,29 @@ if not C_Timer then
                     else
                         table.remove(timers, i)
                     end
-                    pcall(t.fn)
+                    local ok, err = pcall(t.fn)
+                    if not ok and geterrorhandler then geterrorhandler()(err) end
                 end
             end
         end
+        if #timers == 0 then runner:Hide() end
     end)
 
     local function Schedule(delay, fn, repeating)
+        delay = tonumber(delay) or 0
+        if delay < 0 then delay = 0 end
         local t = { left = delay, interval = delay, fn = fn, repeating = repeating, cancelled = false }
         timers[#timers + 1] = t
         runner:Show()
         return {
             Cancel = function() t.cancelled = true end,
+            IsCancelled = function() return t.cancelled end,
         }
     end
 
-    C_Timer = {}
-    function C_Timer.After(delay, fn) Schedule(delay, fn, false) end
-    function C_Timer.NewTimer(delay, fn) return Schedule(delay, fn, false) end
-    function C_Timer.NewTicker(interval, fn) return Schedule(interval, fn, true) end
+    function ns.After(delay, fn) Schedule(delay, fn, false) end
+    function ns.NewTimer(delay, fn) return Schedule(delay, fn, false) end
+    function ns.NewTicker(interval, fn) return Schedule(interval, fn, true) end
 end
 
 ---------------------------------------------------------------------------
@@ -189,7 +199,7 @@ function ns.StopVoiceHandle(handle)
         if not ns.legacy then return end
         local token = (ns._musicToken or 0) + 1
         ns._musicToken = token
-        C_Timer.After(0.8, function()
+        ns.After(0.8, function()
             if ns._musicToken ~= token or ns._usingMusic then return end
             if ns.state and (ns.state.playing or ns.state.pending) then return end
             if ns.queue and #ns.queue > 0 then return end
@@ -481,7 +491,7 @@ boot:RegisterEvent("PLAYER_LOGIN")
 boot:SetScript("OnEvent", function(self)
     self:UnregisterEvent("PLAYER_LOGIN")
     -- не на логине: сбор индекса по паку занимает заметную долю секунды
-    C_Timer.After(1, function() ns.EnsureQuestTextIndex() end)
+    ns.After(1, function() ns.EnsureQuestTextIndex() end)
 end)
 
 ---------------------------------------------------------------------------
