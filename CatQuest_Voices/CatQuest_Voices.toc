@@ -1,0 +1,9 @@
+## Interface: 16001
+## Title: CatQuest Voices
+## X-Curse-Project-ID: 1715207
+## Notes: Пак озвучки квестов для CatQuest (WoW Forever, ruRU)
+## Author: daniilcathey
+## Version: 0.4.0
+## Dependencies: CatQuest
+
+Index.lua

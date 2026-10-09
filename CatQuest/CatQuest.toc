@@ -1,0 +1,30 @@
+## Interface: 16001
+## Title: CatQuest
+## Notes: Озвучка квестов голосами NPC, книг и лора мест — рассказчиком. Паки: CatQuest_Voices, CatQuest_Books
+## Author: daniilcathey
+## Version: 0.4.0
+## SavedVariables: CatQuestDB, CatQuestLines, CatQuestReport
+## Category: Accessibility
+## X-Curse-Project-ID: 1715196
+
+VoiceIndex.lua
+RaceModels.lua
+NpcData.lua
+GreetData.lua
+Npc.lua
+Bridge.lua
+Core.lua
+Queue.lua
+Head.lua
+# Сюжеты зон отключены до переработки (порядок глав, фильтр по расе/классу, новый интерфейс) — 25.09.2026
+# StoryData.lua
+# Story.lua
+# StoryUI.lua
+LoreData.lua
+LoreZones.lua
+Lore.lua
+History.lua
+QA.lua
+Report.lua
+MineList.lua
+Miner.lua

@@ -1,0 +1,17 @@
+<Bindings>
+	<Binding name="CATQUEST_TOGGLE" header="CATQUEST" category="ADDONS">
+		CatQuest_Toggle()
+	</Binding>
+	<Binding name="CATQUEST_READLOG" category="ADDONS">
+		CatQuest_ReadQuestLog()
+	</Binding>
+	<Binding name="CATQUEST_WINDOW" category="ADDONS">
+		CatQuest_ToggleWindow()
+	</Binding>
+	<Binding name="CATQUEST_SKIP" category="ADDONS">
+		CatQuest_Skip()
+	</Binding>
+	<Binding name="CATQUEST_LORE" category="ADDONS">
+		CatQuest_Lore()
+	</Binding>
+</Bindings>
