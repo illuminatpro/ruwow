@@ -79,7 +79,7 @@ local function Refresh()
     for i, row in ipairs(win.rows) do
         local item = items[i + offset]
         row.item = item
-        row:SetShown(item ~= nil)
+        if item then row:Show() else row:Hide() end
         if item then
             row.label:SetText(item.label)
             row.sub:SetText(item.sub)
@@ -87,7 +87,7 @@ local function Refresh()
         end
     end
     win.empty:SetText(tab == "queue" and "Очередь пуста" or "Пока пусто")
-    win.empty:SetShown(#items == 0)
+    if #items == 0 then win.empty:Show() else win.empty:Hide() end
     win.tabQuests:SetEnabled(tab ~= "quests")
     win.tabQueue:SetEnabled(tab ~= "queue")
     win.tabHistory:SetEnabled(tab ~= "history")

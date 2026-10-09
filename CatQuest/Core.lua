@@ -45,6 +45,7 @@ local DEFAULTS = {
     headScale = 1,
     headPos = { point = "BOTTOM", x = 0, y = 190 },
     headLocked = false,
+    minimapAngle = 220,    -- кнопка на миникарте, градусы
     headCompact = false,   -- только портрет и субтитры; шапка с кнопками разворачивается по наведению
     subtitles = true,      -- субтитры под головой
     storyCard = true,      -- карточка «Сюжет» рядом с описанием квеста в журнале
@@ -761,13 +762,77 @@ local bar
 local function CreateFrameButton(parent, onClick)
     if not parent then return end
     local b = CreateFrame("Button", nil, parent, "UIPanelButtonTemplate")
-    b:SetSize(74, 20)
-    b:SetFrameStrata("DIALOG")
-    -- левее крестика окна: на 3.3.5 он сидит в самом углу
-    b:SetPoint("TOPRIGHT", parent, "TOPRIGHT", -44, -8)
+    b:SetSize(84, 22)
+    b:SetFrameStrata("HIGH")
+    b:SetFrameLevel((parent:GetFrameLevel() or 0) + 40)
+    local name = parent.GetName and parent:GetName()
+    local close = parent.CloseButton or (name and _G[name .. "CloseButton"])
+    if close then
+        b:SetPoint("RIGHT", close, "LEFT", -4, 0)
+    else
+        b:SetPoint("TOPRIGHT", parent, "TOPRIGHT", -46, -8)
+    end
     b:SetScript("OnClick", onClick or CatQuest_Toggle)
     frameButtons[#frameButtons + 1] = b
     return b
+end
+
+local function CreateMinimapButton()
+    if CatQuestMinimapButton or not Minimap then return end
+    local btn = CreateFrame("Button", "CatQuestMinimapButton", Minimap)
+    btn:SetSize(31, 31)
+    btn:SetFrameStrata("MEDIUM")
+    btn:SetFrameLevel(8)
+    btn:SetHighlightTexture("Interface\\Minimap\\UI-Minimap-ZoomButton-Highlight")
+    btn:RegisterForClicks("LeftButtonUp", "RightButtonUp")
+    btn:RegisterForDrag("LeftButton")
+
+    local icon = btn:CreateTexture(nil, "BACKGROUND")
+    icon:SetSize(20, 20)
+    icon:SetTexture("Interface\\Icons\\INV_Misc_Book_09")
+    icon:SetTexCoord(0.08, 0.92, 0.08, 0.92)
+    icon:SetPoint("CENTER", 0, 1)
+
+    local border = btn:CreateTexture(nil, "OVERLAY")
+    border:SetSize(53, 53)
+    border:SetTexture("Interface\\Minimap\\MiniMap-TrackingBorder")
+    border:SetPoint("TOPLEFT")
+
+    local function Place()
+        local angle = math.rad(db.minimapAngle or 220)
+        btn:ClearAllPoints()
+        btn:SetPoint("CENTER", Minimap, "CENTER", math.cos(angle) * 80, math.sin(angle) * 80)
+    end
+    local function Drag()
+        local scale = Minimap:GetEffectiveScale()
+        local cx, cy = GetCursorPosition()
+        local mx, my = Minimap:GetCenter()
+        db.minimapAngle = math.deg(math.atan2(cy / scale - my, cx / scale - mx))
+        Place()
+    end
+    btn:SetScript("OnDragStart", function(self)
+        self:SetScript("OnUpdate", Drag)
+    end)
+    btn:SetScript("OnDragStop", function(self)
+        self:SetScript("OnUpdate", nil)
+        Place()
+    end)
+    btn:SetScript("OnClick", function(_, button)
+        if button == "RightButton" then
+            if ns.OpenLegacyOptions then ns.OpenLegacyOptions() end
+        elseif ns.ToggleHistory then
+            ns.ToggleHistory("quests")
+        end
+    end)
+    btn:SetScript("OnEnter", function(self)
+        GameTooltip:SetOwner(self, "ANCHOR_LEFT")
+        GameTooltip:SetText("CatQuest")
+        GameTooltip:AddLine("Левая кнопка — мои квесты, очередь и история.", 1, 1, 1, true)
+        GameTooltip:AddLine("Правая кнопка — настройки. Тяните по краю миникарты.", 0.8, 0.8, 0.8, true)
+        GameTooltip:Show()
+    end)
+    btn:SetScript("OnLeave", GameTooltip_Hide)
+    Place()
 end
 
 local function CreateBar()
@@ -855,7 +920,11 @@ local function HookQuestLog()
         classicLog.catQuestButton = b
         if classicLog == QuestLogFrame then
             b:ClearAllPoints()
-            b:SetPoint("BOTTOMRIGHT", classicLog, "BOTTOMRIGHT", -40, 80)
+            if QuestLogFrameAbandonButton then
+                b:SetPoint("RIGHT", QuestLogFrameAbandonButton, "LEFT", -8, 0)
+            else
+                b:SetPoint("BOTTOMRIGHT", classicLog, "BOTTOMRIGHT", -40, 80)
+            end
         end
     end
 end
@@ -1087,7 +1156,8 @@ local function Welcome()
         Print(("|cffffd100добро пожаловать!|r CatQuest %s — русская озвучка квестов, книг и истории мест. %s."):format(version, packs))
         Print("Возьмите квест — его прочитает голос персонажа; над головой появится портрет с субтитрами (её можно тянуть).")
         if ns.legacy then
-            Print("Настройки: /cq options. Громкость — ползунок «Музыка»: на 3.3.5a озвучку можно остановить, поэтому она идёт музыкальным каналом.")
+            Print("Кнопка на миникарте: левая — список квестов, правая — настройки. Пока квест читается, снизу портрет и субтитры.")
+            Print("Громкость — ползунок «Музыка».")
         else
             Print("Настройки: Esc > Параметры > Дополнения > CatQuest. Команды: /cq — окно квестов и истории, /cq stop, /cq test, /cq help.")
         end
@@ -1131,6 +1201,7 @@ events:SetScript("OnEvent", function(self, event, ...)
     end
     if event == "PLAYER_LOGIN" then
         if not db.head then CreateBar() end
+        CreateMinimapButton()
         CreateFrameButton(QuestFrame)
         CreateFrameButton(GossipFrame)
         CreateFrameButton(ItemTextFrame)

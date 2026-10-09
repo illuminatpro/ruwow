@@ -91,16 +91,26 @@ local SOURCE_LABEL = { pack = "озвучка из пака", file = "нейро
 -- Появление/исчезание
 ---------------------------------------------------------------------------
 local function ShowHead()
-    if head:IsShown() and not head.hiding then return end
+    if head:IsShown() and not head.hiding and head:GetAlpha() > 0.95 then return end
     head.hiding = nil
-    head.fadeOut:Stop()
-    if not head._absAlpha then head:SetAlpha(0) end
+    if head.fadeOut then head.fadeOut:Stop() end
     head:Show()
+    -- На 3.3.5 альфа-анимация часто заканчивается, не сдвинув прозрачность: голова остаётся на 0.
+    if ns.legacy then
+        head:SetAlpha(1)
+        return
+    end
+    if not head._absAlpha then head:SetAlpha(0) end
     head.fadeIn:Play()
 end
 
 local function HideHead()
     if not head or not head:IsShown() or head.hiding then return end
+    if ns.legacy then
+        head.hiding = nil
+        head:Hide()
+        return
+    end
     head.hiding = true
     head.fadeIn:Stop()
     head.fadeOut:Play()
@@ -113,7 +123,7 @@ local function Layout(expanded)
     if head.expanded == expanded then return end
     head.expanded = expanded
     for _, r in ipairs({ head.name, head.title, head.bar, head.time, head.queue, head.skip, head.close }) do
-        r:SetShown(expanded)
+        if expanded then r:Show() else r:Hide() end
     end
     head:SetWidth(expanded and FULL_W or COMPACT_W)
     if expanded then head:UpdateButtons() end
@@ -128,7 +138,7 @@ end
 ---------------------------------------------------------------------------
 local function Create()
     local db = CatQuestDB
-    head = CreateFrame("Frame", "CatQuestHead", UIParent, ns.Backdrop)
+    head = CreateFrame("Frame", nil, UIParent, ns.Backdrop)
     head:SetSize(FULL_W, FULL_H)
     head:SetPoint(db.headPos.point, UIParent, db.headPos.point, db.headPos.x, db.headPos.y)
     head:SetScale(db.headScale or 1)
@@ -308,6 +318,8 @@ local function Create()
     end)
     head.expanded = true
     head:Hide()
+    head._ready = true
+    _G.CatQuestHead = head
 end
 
 -- Тайминги предложений для внешних окон (читалка лора): { предложения }, { время начала }.
@@ -333,7 +345,20 @@ function ns.UpdateHead()
         if head then HideHead() end
         return
     end
-    if not head then Create() end
+    if head and not head._ready then
+        head:Hide()
+        head = nil
+    end
+    if not head then
+        if ns._headErr then return end
+        local ok, err = pcall(Create)
+        if not ok then
+            if head then head:Hide(); head = nil end
+            ns._headErr = true
+            DEFAULT_CHAT_FRAME:AddMessage("|cffffb347CatQuest:|r голова не открылась: " .. tostring(err))
+            return
+        end
+    end
     local st = ns.state
     local n = #ns.queue
     if not st.playing and not st.pending and n == 0 then

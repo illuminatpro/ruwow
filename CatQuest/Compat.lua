@@ -26,16 +26,38 @@ end
 
 local function Noop() end
 
-local function Patch(widget, methods)
-    local ok, obj = pcall(CreateFrame, widget, nil, UIParent)
-    if not ok or not obj then return end
+local function PatchIndex(obj, methods)
     local mt = getmetatable(obj)
-    local idx = mt and mt.__index
+    if not mt then return end
+    local idx = mt.__index
     if type(idx) == "table" then
         for name, fn in pairs(methods) do
             if idx[name] == nil then idx[name] = fn end
         end
+        return
     end
+    -- На части сборок __index — функция. Подменяем её один раз и складываем методы рядом.
+    if type(idx) ~= "function" then return end
+    local extra = mt.__cqExtra
+    if not extra then
+        extra = {}
+        mt.__cqExtra = extra
+        local orig = idx
+        mt.__index = function(self, key)
+            local v = extra[key]
+            if v ~= nil then return v end
+            return orig(self, key)
+        end
+    end
+    for name, fn in pairs(methods) do
+        if extra[name] == nil then extra[name] = fn end
+    end
+end
+
+local function Patch(widget, methods)
+    local ok, obj = pcall(CreateFrame, widget, nil, UIParent)
+    if not ok or not obj then return end
+    PatchIndex(obj, methods)
     obj:Hide()
     obj:SetParent(nil)
 end
@@ -51,20 +73,19 @@ for _, widget in ipairs({
 end
 
 do
+    -- Текстуры и надписи — не фреймы. Без SetSize/SetShown голова обрывается на портрете
+    -- и окно «Мои квесты» падает на пустой строке.
+    local region = { SetSize = SetSize, SetShown = SetShown }
     local tex = UIParent:CreateTexture(nil, "OVERLAY")
-    local idx = getmetatable(tex).__index
-    if type(idx) == "table" and idx.SetColorTexture == nil then
-        idx.SetColorTexture = function(self, r, g, b, a)
-            self:SetTexture(r, g, b, a or 1)
-        end
+    region.SetColorTexture = function(self, r, g, b, a)
+        self:SetTexture("Interface\\ChatFrame\\ChatFrameBackground")
+        self:SetVertexColor(r or 1, g or 1, b or 1, a or 1)
     end
+    PatchIndex(tex, region)
     tex:Hide()
 
     local fs = UIParent:CreateFontString(nil, "OVERLAY")
-    local fidx = getmetatable(fs).__index
-    if type(fidx) == "table" and fidx.SetWordWrap == nil then
-        fidx.SetWordWrap = Noop
-    end
+    PatchIndex(fs, { SetSize = SetSize, SetShown = SetShown, SetWordWrap = Noop })
     fs:Hide()
 end
 
