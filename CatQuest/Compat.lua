@@ -59,7 +59,6 @@ do
         end
     end
     tex:Hide()
-    tex:SetParent(nil)
 
     local fs = UIParent:CreateFontString(nil, "OVERLAY")
     local fidx = getmetatable(fs).__index
@@ -67,7 +66,6 @@ do
         fidx.SetWordWrap = Noop
     end
     fs:Hide()
-    fs:SetParent(nil)
 end
 
 if not GetPhysicalScreenSize then
