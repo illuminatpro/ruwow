@@ -45,6 +45,7 @@ local DEFAULTS = {
     headScale = 1,
     headPos = { point = "BOTTOM", x = 0, y = 190 },
     headLocked = false,
+    minimapAngle = 220,    -- кнопка на миникарте, градусы
     headCompact = false,   -- только портрет и субтитры; шапка с кнопками разворачивается по наведению
     subtitles = true,      -- субтитры под головой
     storyCard = true,      -- карточка «Сюжет» рядом с описанием квеста в журнале
@@ -156,7 +157,10 @@ end
 
 -- Естественный конец (таймер / событие TTS): очередь берёт следующий текст.
 local function Finished()
+    local handle = state.soundHandle
     SetPlaying(false)
+    -- дорожка доиграла: на 3.3.5 вернуть музыку локации, если очередь пуста
+    if handle == "music" and ns.StopVoiceHandle then ns.StopVoiceHandle(handle) end
     if ns.OnPlaybackEnded then ns.OnPlaybackEnded() end
 end
 
@@ -164,7 +168,8 @@ ns.state = state
 
 local function Stop()
     if (state.source == "file" or state.source == "pack") and state.soundHandle then
-        StopSound(state.soundHandle, 300)
+        if ns.StopVoiceHandle then ns.StopVoiceHandle(state.soundHandle)
+        elseif StopSound then StopSound(state.soundHandle, 300) end
     end
     if state.source == "bridge" then
         ns.BridgeStop()
@@ -201,6 +206,7 @@ end
 -- голова и субтитры идут, звука нет (тестер 26.09.2026 — селфтест проходил, т.к. играл в Master). Тогда — основной канал.
 local channelWarned
 function ns.SoundChannel()
+    if ns.legacy then return "Music" end
     if db.masterChannel then return "Master" end
     if db.channel ~= "Dialog" then return db.channel end
     local enabled = GetCVar and GetCVar("Sound_EnableDialog")
@@ -218,11 +224,11 @@ end
 local function PlayFile(hash)
     local dur = CatQuestVoiceIndex and CatQuestVoiceIndex[hash]
     if not dur then return false end
-    local willPlay, handle = PlaySoundFile(VOICE_DIR .. hash .. ".mp3", ns.SoundChannel())
+    local willPlay, handle = ns.PlayVoiceFile(VOICE_DIR .. hash .. ".mp3")
     if not willPlay then return false end
     state.soundHandle = handle
     SetPlaying(true, "file", dur)
-    state.timer = C_Timer.NewTimer(dur + 0.3, function()
+    state.timer = ns.NewTimer(dur + 0.3, function()
         state.timer = nil
         Finished()
     end)
@@ -264,7 +270,7 @@ local function PlayPack(meta)
     if not entry then return false end
     if ns.CheckMismatch then ns.CheckMismatch(entry, meta) end  -- QA: голос из пака против NPC перед игроком
     local suffix = entry.g and (UnitSex("player") == 3 and "_f" or "_m") or ""
-    local willPlay, handle = PlaySoundFile(dir .. file .. suffix .. ".ogg", ns.SoundChannel())
+    local willPlay, handle = ns.PlayVoiceFile(dir .. file .. suffix .. ".ogg")
     if not willPlay then
         -- запись в паке есть, а клиент файл не видит: чаще всего пак положили при запущенной игре (нужен полный перезапуск)
         if ns.NoteResult then ns.NoteResult("файл не найден " .. file .. suffix .. ".ogg", meta) end
@@ -306,7 +312,7 @@ local function PlayPack(meta)
     end
     state.voice = entry.v  -- для подсказки на голове
     SetPlaying(true, "pack", entry.d)
-    state.timer = C_Timer.NewTimer(entry.d + 0.3, function()
+    state.timer = ns.NewTimer(entry.d + 0.3, function()
         state.timer = nil
         Finished()
     end)
@@ -329,6 +335,16 @@ ns.Print = Print
 ns.TextHash, ns.CleanText = TextHash, CleanText  -- для самопроверки (QA.lua)
 
 local ttsWarned
+local function PlaySubtitles(text)
+    local est = math.max(4, 2 + strlenutf8(text) / 14)
+    SetPlaying(true, "subs", est)
+    state.timer = ns.NewTimer(est, function()
+        state.timer = nil
+        Finished()
+    end)
+    return true
+end
+
 local function PlayTTS(text, sex)
     -- На Forever встроенный TTS без голосов (SpeakText молча падает со статусом 6): не делаем вид, что играем,
     -- иначе «говорящая голова» вылезает на тишину.
@@ -336,14 +352,20 @@ local function PlayTTS(text, sex)
     if not (C_VoiceChat and C_VoiceChat.SpeakText) or not voices or #voices == 0 then
         if not ttsWarned then
             ttsWarned = true
-            Print("встроенный TTS недоступен в этом клиенте — тексты без озвучки в паке пропускаются")
+            if ns.legacy then
+                Print("этот текст не найден в паке озвучки, а встроенного голоса в 3.3.5 нет. На голове только субтитры. "
+                    .. "Проверка звука: /cq pack 7 — должен играть Sounds\\q\\7.ogg. Громкость — ползунок «Музыка».")
+            else
+                Print("встроенный TTS недоступен в этом клиенте — тексты без озвучки в паке пропускаются")
+            end
         end
+        if ns.legacy then return PlaySubtitles(text) end
         return false
     end
     C_VoiceChat.SpeakText(PickVoice(sex), text, db.rate, db.volume, false)
     SetPlaying(true, "tts", strlenutf8(text) / 14)
     -- страховка: если событие FINISHED/FAILED не придёт (Forever «молча» падает), не висеть с playing=true
-    state.timer = C_Timer.NewTimer(strlenutf8(text) / 14 + 5, function()
+    state.timer = ns.NewTimer(strlenutf8(text) / 14 + 5, function()
         state.timer = nil
         if state.source == "tts" then Finished() end
     end)
@@ -407,6 +429,10 @@ local function Speak(text, meta)
     state.offerText, state.offerMeta = nil, nil
     local hash = TextHash(text)
     meta.hash = hash
+    if (not meta.quest or meta.quest == 0) and ns.QuestIDFromText then
+        local kind = (meta.kind == "complete" or meta.kind == "progress") and meta.kind or "detail"
+        meta.quest = ns.QuestIDFromText(meta.desc or text, kind, meta.npcID)
+    end
     Remember(hash, text, meta)
     AddHistory(text, meta)
     if PlayPack(meta) then return true end
@@ -417,7 +443,7 @@ local function Speak(text, meta)
         -- Когда компаньон закончит, мы не узнаем, поэтому прячем панель по оценке (~14 символов/сек).
         local est = 2 + strlenutf8(text) / 14
         SetPlaying(true, "bridge", est)
-        state.timer = C_Timer.NewTimer(est, function()
+        state.timer = ns.NewTimer(est, function()
             state.timer = nil
             Finished()
         end)
@@ -599,46 +625,83 @@ function ns.ReadQuest(questID, enqueue)
 end
 
 local function CurrentQuestID()
-    return GetQuestID and GetQuestID() or nil
+    if GetQuestID then
+        local id = GetQuestID()
+        if id and id ~= 0 then return id end
+    end
+    -- 3.3.5a не отдаёт ID открытого квеста: ищем его по тексту пака
+    if ns.QuestIDFromOpenWindow then return ns.QuestIDFromOpenWindow() end
 end
 
 local handlers = {}
 
 function handlers.QUEST_DETAIL()
-    OfferFromNpc(QuestDetailText(), "detail", CurrentQuestID(), db.autoDetail and not db.readAfterAccept, GetQuestText and GetQuestText())
+    -- Текст снимаем сразу: окно на 3.3.5 иногда закрывается в этом же кадре.
+    -- Модель и звук — на следующем, чтобы не сбрасывать диалог NPC.
+    local text, desc, questID = QuestDetailText(), GetQuestText and GetQuestText(), CurrentQuestID()
+    ns.After(0, function()
+        OfferFromNpc(text, "detail", questID, db.autoDetail and not db.readAfterAccept, desc)
+    end)
 end
 
 -- Режим «читать после принятия»: текст NPC сохранён при показе окна, читаем его, когда квест взят.
 function handlers.QUEST_ACCEPTED(a, b)
-    local questID = b or a  -- ретейл: (questID); классика: (индекс в журнале, questID)
+    -- ретейл: (questID); 4.x: (индекс, questID); 3.3.5: часто только индекс в журнале, иногда без аргументов
+    local questID
+    if type(b) == "number" and b > 0 then
+        questID = b
+    elseif type(a) == "number" and a > 0 then
+        local n = GetNumQuestLogEntries and GetNumQuestLogEntries() or 0
+        if a <= n and GetQuestLink then
+            local link = GetQuestLink(a)
+            questID = link and tonumber(link:match("quest:(%d+)"))
+        end
+        if not questID and a > n then questID = a end
+    end
+    if not questID and state.offerMeta and state.offerMeta.quest and state.offerMeta.quest > 0 then
+        questID = state.offerMeta.quest
+    end
     if db.readAfterAccept and db.autoDetail and questID and questID > 0 then
         -- через очередь: несколько принятых подряд читаются по одному, текущее не обрывается.
         -- Чуть позже, чем QUEST_FINISHED окна: иначе «останавливать при закрытии окна» обрывает только что начатое чтение
-        C_Timer.After(0.1, function() ns.ReadQuest(questID, true) end)
+        ns.After(0.1, function() ns.ReadQuest(questID, true) end)
     end
 end
 
 function handlers.QUEST_PROGRESS()
-    OfferFromNpc(GetProgressText(), "progress", CurrentQuestID(), db.autoProgress)
+    local text, questID = GetProgressText(), CurrentQuestID()
+    ns.After(0, function()
+        OfferFromNpc(text, "progress", questID, db.autoProgress)
+    end)
 end
 
 function handlers.QUEST_COMPLETE()
-    OfferFromNpc(GetRewardText(), "complete", CurrentQuestID(), db.autoComplete)
+    local text, questID = GetRewardText(), CurrentQuestID()
+    ns.After(0, function()
+        OfferFromNpc(text, "complete", questID, db.autoComplete)
+    end)
 end
 
 function handlers.QUEST_GREETING()
-    OfferFromNpc(GetGreetingText(), "greeting", nil, db.autoGreeting)
+    local text = GetGreetingText()
+    ns.After(0, function()
+        OfferFromNpc(text, "greeting", nil, db.autoGreeting)
+    end)
 end
 
 function handlers.GOSSIP_SHOW()
     local text = C_GossipInfo and C_GossipInfo.GetText and C_GossipInfo.GetText()
-    OfferFromNpc(text, "gossip", nil, db.autoGossip)
+    ns.After(0, function()
+        OfferFromNpc(text, "gossip", nil, db.autoGossip)
+    end)
 end
 
 function handlers.ITEM_TEXT_READY()
     local text = ItemTextGetText()
-    if ns.ReportBook and text then pcall(ns.ReportBook, text, TextHash(CleanText(text))) end
-    Offer(text, { kind = "book" }, db.autoBooks)
+    ns.After(0, function()
+        if ns.ReportBook and text then pcall(ns.ReportBook, text, TextHash(CleanText(text))) end
+        Offer(text, { kind = "book" }, db.autoBooks)
+    end)
 end
 
 local function OnWindowClosed()
@@ -653,7 +716,10 @@ handlers.ITEM_TEXT_CLOSED = OnWindowClosed
 -- /reload и выход (B-31): звук PlaySoundFile живёт в клиенте и переживает перезагрузку интерфейса, а наш handle — нет: после
 -- /reload дорожку уже не остановить, головы нет, очередь пуста — следующая озвучка ложилась поверх. Глушим до выгрузки.
 function handlers.PLAYER_LOGOUT()
-    if state.soundHandle then StopSound(state.soundHandle, 0) end
+    if state.soundHandle then
+        if ns.StopVoiceHandle then ns.StopVoiceHandle(state.soundHandle)
+        elseif StopSound then StopSound(state.soundHandle, 0) end
+    end
     if state.source == "bridge" and ns.BridgeStop then ns.BridgeStop() end
     if C_VoiceChat and C_VoiceChat.StopSpeakingText then C_VoiceChat.StopSpeakingText() end
     KeepSoundInBackground(false)
@@ -696,16 +762,81 @@ local bar
 local function CreateFrameButton(parent, onClick)
     if not parent then return end
     local b = CreateFrame("Button", nil, parent, "UIPanelButtonTemplate")
-    b:SetSize(74, 20)
-    b:SetFrameStrata("DIALOG")
-    b:SetPoint("TOPRIGHT", parent, "TOPRIGHT", -28, -2)
+    b:SetSize(84, 22)
+    b:SetFrameStrata("HIGH")
+    b:SetFrameLevel((parent:GetFrameLevel() or 0) + 40)
+    local name = parent.GetName and parent:GetName()
+    local close = parent.CloseButton or (name and _G[name .. "CloseButton"])
+    if close then
+        b:SetPoint("RIGHT", close, "LEFT", -4, 0)
+    else
+        b:SetPoint("TOPRIGHT", parent, "TOPRIGHT", -46, -8)
+    end
     b:SetScript("OnClick", onClick or CatQuest_Toggle)
     frameButtons[#frameButtons + 1] = b
     return b
 end
 
+local function CreateMinimapButton()
+    if CatQuestMinimapButton or not Minimap then return end
+    local btn = CreateFrame("Button", "CatQuestMinimapButton", Minimap)
+    btn:SetSize(31, 31)
+    btn:SetFrameStrata("MEDIUM")
+    btn:SetFrameLevel(8)
+    btn:SetHighlightTexture("Interface\\Minimap\\UI-Minimap-ZoomButton-Highlight")
+    btn:RegisterForClicks("LeftButtonUp", "RightButtonUp")
+    btn:RegisterForDrag("LeftButton")
+
+    local icon = btn:CreateTexture(nil, "BACKGROUND")
+    icon:SetSize(20, 20)
+    icon:SetTexture("Interface\\Icons\\INV_Misc_Book_09")
+    icon:SetTexCoord(0.08, 0.92, 0.08, 0.92)
+    icon:SetPoint("CENTER", 0, 1)
+
+    local border = btn:CreateTexture(nil, "OVERLAY")
+    border:SetSize(53, 53)
+    border:SetTexture("Interface\\Minimap\\MiniMap-TrackingBorder")
+    border:SetPoint("TOPLEFT")
+
+    local function Place()
+        local angle = math.rad(db.minimapAngle or 220)
+        btn:ClearAllPoints()
+        btn:SetPoint("CENTER", Minimap, "CENTER", math.cos(angle) * 80, math.sin(angle) * 80)
+    end
+    local function Drag()
+        local scale = Minimap:GetEffectiveScale()
+        local cx, cy = GetCursorPosition()
+        local mx, my = Minimap:GetCenter()
+        db.minimapAngle = math.deg(math.atan2(cy / scale - my, cx / scale - mx))
+        Place()
+    end
+    btn:SetScript("OnDragStart", function(self)
+        self:SetScript("OnUpdate", Drag)
+    end)
+    btn:SetScript("OnDragStop", function(self)
+        self:SetScript("OnUpdate", nil)
+        Place()
+    end)
+    btn:SetScript("OnClick", function(_, button)
+        if button == "RightButton" then
+            if ns.OpenLegacyOptions then ns.OpenLegacyOptions() end
+        elseif ns.ToggleHistory then
+            ns.ToggleHistory("quests")
+        end
+    end)
+    btn:SetScript("OnEnter", function(self)
+        GameTooltip:SetOwner(self, "ANCHOR_LEFT")
+        GameTooltip:SetText("CatQuest")
+        GameTooltip:AddLine("Левая кнопка — мои квесты, очередь и история.", 1, 1, 1, true)
+        GameTooltip:AddLine("Правая кнопка — настройки. Тяните по краю миникарты.", 0.8, 0.8, 0.8, true)
+        GameTooltip:Show()
+    end)
+    btn:SetScript("OnLeave", GameTooltip_Hide)
+    Place()
+end
+
 local function CreateBar()
-    bar = CreateFrame("Frame", "CatQuestBar", UIParent, "BackdropTemplate")
+    bar = CreateFrame("Frame", "CatQuestBar", UIParent, ns.Backdrop)
     bar:SetSize(170, 28)
     bar:SetPoint(db.bar.point, UIParent, db.bar.point, db.bar.x, db.bar.y)
     bar:SetFrameStrata("HIGH")
@@ -757,7 +888,7 @@ UpdateUI = function()
     end
     if ns.UpdateHead then ns.UpdateHead() end
     if bar then
-        local labels = { file = "Нейро-голос", pack = "Озвучка", bridge = "Компаньон", tts = "TTS" }
+        local labels = { file = "Нейро-голос", pack = "Озвучка", bridge = "Компаньон", tts = "TTS", subs = "Субтитры" }
         bar.label:SetText(labels[state.source] or "Озвучка")
         bar:SetShown(state.playing)
     end
@@ -785,7 +916,16 @@ local function HookQuestLog()
     end
     local classicLog = QuestLogDetailFrame or QuestLogFrame
     if classicLog and not classicLog.catQuestButton then
-        classicLog.catQuestButton = LogButton(classicLog)
+        local b = LogButton(classicLog)
+        classicLog.catQuestButton = b
+        if classicLog == QuestLogFrame then
+            b:ClearAllPoints()
+            if QuestLogFrameAbandonButton then
+                b:SetPoint("RIGHT", QuestLogFrameAbandonButton, "LEFT", -8, 0)
+            else
+                b:SetPoint("BOTTOMRIGHT", classicLog, "BOTTOMRIGHT", -40, 80)
+            end
+        end
     end
 end
 
@@ -793,7 +933,10 @@ end
 -- Настройки (Settings API, если есть) + слэш-команды
 ---------------------------------------------------------------------------
 local function RegisterSettings()
-    if not (Settings and Settings.RegisterVerticalLayoutCategory and Settings.RegisterAddOnSetting) then return end
+    if not (Settings and Settings.RegisterVerticalLayoutCategory and Settings.RegisterAddOnSetting) then
+        if ns.RegisterLegacyOptions then ns.RegisterLegacyOptions() end
+        return
+    end
     local category = Settings.RegisterVerticalLayoutCategory("CatQuest")
 
     local layout = SettingsPanel and SettingsPanel.GetLayout and SettingsPanel:GetLayout(category)
@@ -986,8 +1129,10 @@ SlashCmdList.CATQUEST = function(msg)
         state.text, state.meta = "Проверка встроенного голоса.", { kind = "test" }
         PlayTTS(state.text, 2)
     elseif cmd == "options" or cmd == "config" then
-        if ns.settingsCategory and Settings.OpenToCategory then
+        if ns.settingsCategory and Settings and Settings.OpenToCategory then
             Settings.OpenToCategory(ns.settingsCategory:GetID())
+        elseif ns.OpenLegacyOptions then
+            ns.OpenLegacyOptions()
         end
     elseif cmd == "" then
         CatQuest_Toggle()
@@ -1010,8 +1155,17 @@ local function Welcome()
         db.seenVersion = version
         Print(("|cffffd100добро пожаловать!|r CatQuest %s — русская озвучка квестов, книг и истории мест. %s."):format(version, packs))
         Print("Возьмите квест — его прочитает голос персонажа; над головой появится портрет с субтитрами (её можно тянуть).")
-        Print("Настройки: Esc > Параметры > Дополнения > CatQuest. Команды: /cq — окно квестов и истории, /cq stop, /cq test, /cq help.")
+        if ns.legacy then
+            Print("Кнопка на миникарте: левая — список квестов, правая — настройки. Пока квест читается, снизу портрет и субтитры.")
+            Print("Громкость — ползунок «Музыка».")
+        else
+            Print("Настройки: Esc > Параметры > Дополнения > CatQuest. Команды: /cq — окно квестов и истории, /cq stop, /cq test, /cq help.")
+        end
         return
+    end
+    if ns.legacy and not db.legacyNoted then
+        db.legacyNoted = true
+        Print("WoW 3.3.5a: громкость озвучки — ползунок «Музыка». Пока говорит персонаж, музыка локации замолкает.")
     end
     if db.seenVersion ~= version then
         db.seenVersion = version
@@ -1039,7 +1193,7 @@ events:SetScript("OnEvent", function(self, event, ...)
             if db.bgCVarSet and SetCVar then SetCVar("Sound_EnableSoundWhenGameIsInBG", "0"); db.bgCVarSet = nil end
             -- Диагностика: переживают ли сохранения перезапуск игры.
             db.loads = (db.loads or 0) + 1
-            C_Timer.After(3, Welcome)
+            ns.After(3, Welcome)
         elseif db then
             HookQuestLog() -- журнал квестов может грузиться отдельным аддоном
         end
@@ -1047,6 +1201,7 @@ events:SetScript("OnEvent", function(self, event, ...)
     end
     if event == "PLAYER_LOGIN" then
         if not db.head then CreateBar() end
+        CreateMinimapButton()
         CreateFrameButton(QuestFrame)
         CreateFrameButton(GossipFrame)
         CreateFrameButton(ItemTextFrame)
