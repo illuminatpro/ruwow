@@ -593,6 +593,13 @@ local OPTIONS = {
 
 function ns.RegisterLegacyOptions()
     if ns._options then return end
+    local options = {}
+    for _, opt in ipairs(OPTIONS) do
+        -- Рассказчик лора на 3.3.5 не говорит: в клиенте нет TTS, в паке квестов этих записей нет.
+        if not (ns.legacy and (opt[1] == "lore" or opt[1] == "loreAuto")) then
+            options[#options + 1] = opt
+        end
+    end
     local panel = CreateFrame("Frame", "CatQuestOptions", UIParent, ns.Backdrop)
     panel:SetSize(440, 520)
     panel:SetPoint("CENTER")
@@ -634,10 +641,10 @@ function ns.RegisterLegacyOptions()
     scroll:SetPoint("TOPLEFT", 16, -72)
     scroll:SetPoint("BOTTOMRIGHT", -36, 16)
     local content = CreateFrame("Frame", "CatQuestOptContent", scroll)
-    content:SetSize(360, #OPTIONS * 26 + 70)
+    content:SetSize(360, #options * 26 + 70)
     scroll:SetScrollChild(content)
 
-    for i, opt in ipairs(OPTIONS) do
+    for i, opt in ipairs(options) do
         local key, label, tip = opt[1], opt[2], opt[3]
         local cb = CreateFrame("CheckButton", "CatQuestOpt" .. i, content, "UICheckButtonTemplate")
         cb:SetPoint("TOPLEFT", 4, -((i - 1) * 26))
@@ -666,7 +673,7 @@ function ns.RegisterLegacyOptions()
     end
 
     local slider = CreateFrame("Slider", "CatQuestHeadScale", content, "OptionsSliderTemplate")
-    slider:SetPoint("TOPLEFT", 8, -(#OPTIONS * 26 + 16))
+    slider:SetPoint("TOPLEFT", 8, -(#options * 26 + 16))
     slider:SetWidth(220)
     slider:SetMinMaxValues(0.6, 1.6)
     slider:SetValueStep(0.1)

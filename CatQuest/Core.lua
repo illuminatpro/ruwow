@@ -424,6 +424,8 @@ local function Speak(text, meta)
     text = CleanText(text)
     if text == "" then return end
     meta = meta or {}
+    -- Лор мест читал «Рассказчик» через TTS или компаньона. На 3.3.5 обоих нет, голова молчала.
+    if ns.legacy and (meta.lore or meta.npc == "Рассказчик") then return end
     Stop()
     state.text, state.meta, state.subtitleText, state.cues, state.voice = text, meta, nil, nil, nil  -- cues прошлого квеста — не для этого текста
     state.offerText, state.offerMeta = nil, nil

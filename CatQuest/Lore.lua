@@ -72,8 +72,9 @@ local function Nearest()
 end
 
 -- Рассказ в говорящей голове через очередь (как квесты и книги).
+-- На 3.3.5 нет TTS и компаньон молчит: рассказчик только показывает субтитры. Его нет.
 function ns.LoreSpeak(p)
-    if not p then return end
+    if ns.legacy or not p then return end
     CatQuestDB.loreHeard = CatQuestDB.loreHeard or {}
     CatQuestDB.loreHeard[KeyOf(p)] = true
     if button then button.pulse:Stop(); button.glow:Hide() end
@@ -83,6 +84,7 @@ end
 
 -- Клавиша «рассказчик для местности» (просьба игрока 30.09.2026): то же, что нажать на свиток, — ближайшее место.
 function CatQuest_Lore()
+    if ns.legacy then return end
     local p = Nearest()
     if p then ns.LoreSpeak(p) elseif ns.Print then ns.Print("здесь нет рассказа о месте") end
 end
@@ -139,6 +141,10 @@ local function CreateButton()
 end
 
 local function Tick()
+    if ns.legacy then
+        if button then button:Hide() end
+        return
+    end
     if not CatQuestDB then return end  -- до ADDON_LOADED сохранений ещё нет
     if CatQuestDB.lore == false then if button then button:Hide() end; return end
     -- На такси (грифон/виверна) зоны сменяются каждые секунды: свиток не показываем и сами не читаем — иначе рассказчик
