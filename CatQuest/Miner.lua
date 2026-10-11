@@ -38,7 +38,7 @@ local function Tick()
     local id = run.ids[run.sent + 1]
     if not id then
         run.ticker:Cancel()
-        C_Timer.After(5, function() Report(true); miner:UnregisterEvent("QUEST_DATA_LOAD_RESULT"); run = nil end)
+        ns.After(5, function() Report(true); miner:UnregisterEvent("QUEST_DATA_LOAD_RESULT"); run = nil end)
         return
     end
     run.sent = run.sent + 1
@@ -48,6 +48,10 @@ local function Tick()
 end
 
 function ns.Mine(cmd)
+    if not (C_QuestLog and C_QuestLog.RequestLoadQuestByID) then
+        Print("сбор текстов квестов с сервера есть только на новых клиентах. На 3.3.5a пак уже собран, /cq mine не нужен.")
+        return
+    end
     if cmd == "stop" then
         if run then run.ticker:Cancel(); Report(true); run = nil end
         return
@@ -61,6 +65,6 @@ function ns.Mine(cmd)
     local rate = tonumber(cmd) or DEFAULT_RATE
     run = { ids = ids, sent = 0, answered = 0, loaded = 0, pending = {}, results = {}, rate = rate }
     miner:RegisterEvent("QUEST_DATA_LOAD_RESULT")
-    run.ticker = C_Timer.NewTicker(1 / rate, Tick)
+    run.ticker = ns.NewTicker(1 / rate, Tick)
     Print(("запрашиваю %d квестов по %d/сек, ~%d сек"):format(#ids, rate, math.ceil(#ids / rate)))
 end

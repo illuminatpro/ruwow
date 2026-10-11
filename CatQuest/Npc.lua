@@ -20,8 +20,13 @@ end
 local function NpcID(unit)
     local guid = UnitGUID(unit)
     if not guid then return end
+    if ns.NpcIDFromGUID then return ns.NpcIDFromGUID(guid) end
     local kind, _, _, _, _, id = strsplit("-", guid)
     if kind == "Creature" or kind == "Vehicle" then return tonumber(id) end
+end
+
+local function ModelFileID(model)
+    if model and model.GetModelFileID then return model:GetModelFileID() end
 end
 
 local function SexName(sex)
@@ -92,10 +97,16 @@ function ns.IdentifyNpc(unit, callback)
         return
     end
 
+    -- SetUnit("npc") у скрытой модели на 3.3.5 сбрасывает цель, и окно квеста сразу закрывается.
+    if ns.legacy and unit == "npc" and ns.DialogShown and ns.DialogShown() then
+        callback(info)
+        return
+    end
+
     local m = Probe()
     m:ClearModel()
     m:SetUnit(unit)
-    local fileID = m:GetModelFileID()
+    local fileID = ModelFileID(m)
     if fileID then
         Finish(info, fileID, callback)
         return
@@ -111,7 +122,7 @@ function ns.IdentifyNpc(unit, callback)
     local waited = 0
     m:SetScript("OnUpdate", function(self, elapsed)
         waited = waited + elapsed
-        local id = self:GetModelFileID()
+        local id = ModelFileID(self)
         if id or waited >= MODEL_WAIT then
             self:SetScript("OnUpdate", nil)
             m.pendingFinish = nil
@@ -132,7 +143,7 @@ learner:SetScript("OnEvent", function()
     if m:GetScript("OnUpdate") then return end  -- probe занят определением NPC — не подменять ему модель
     m:ClearModel()
     m:SetUnit("target")
-    local fileID = m:GetModelFileID()
+    local fileID = ModelFileID(m)
     if fileID and not ns.RaceModels[fileID] and not CatQuestDB.learnedModels[fileID] then
         CatQuestDB.learnedModels[fileID] = { race, sex }
         CatQuestDB.unknownModels[fileID] = nil

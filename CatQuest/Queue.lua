@@ -58,7 +58,7 @@ function ns.PlayNext()
         item.meta.delayed = true
         st.pending = item
         if ns.UpdateHead then ns.UpdateHead() end
-        C_Timer.After(item.meta.delay, function()
+        ns.After(item.meta.delay, function()
             if st.pending ~= item then return end  -- сняли стопом/скипом
             st.pending = nil
             if not ns.Speak(item.text, item.meta) then ns.PlayNext() end
@@ -70,7 +70,7 @@ end
 
 -- Естественный конец воспроизведения (таймер/событие TTS) — через паузу берём следующий.
 function ns.OnPlaybackEnded()
-    C_Timer.After(0.6, function()
+    ns.After(0.6, function()
         if not ns.state.playing then ns.PlayNext() end
     end)
 end

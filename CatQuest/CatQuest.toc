@@ -1,12 +1,13 @@
-## Interface: 16001
+## Interface: 30300
 ## Title: CatQuest
-## Notes: Озвучка квестов голосами NPC, книг и лора мест — рассказчиком. Паки: CatQuest_Voices, CatQuest_Books
+## Notes: Озвучка квестов для WoW 3.3.5a (ruRU). Паки: CatQuest_Voices, CatQuest_Books
 ## Author: daniilcathey
-## Version: 0.4.0
+## Version: 0.4.1
 ## SavedVariables: CatQuestDB, CatQuestLines, CatQuestReport
 ## Category: Accessibility
 ## X-Curse-Project-ID: 1715196
 
+Compat.lua
 VoiceIndex.lua
 RaceModels.lua
 NpcData.lua

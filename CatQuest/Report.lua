@@ -80,7 +80,14 @@ local function Anonymize(text)
 end
 
 local function MapID()
-    return C_Map and C_Map.GetBestMapForUnit and C_Map.GetBestMapForUnit("player") or 0
+    if C_Map and C_Map.GetBestMapForUnit then
+        return C_Map.GetBestMapForUnit("player") or 0
+    end
+    if ns.LegacyMapPos then
+        local map = ns.LegacyMapPos()
+        return map or 0
+    end
+    return 0
 end
 
 local function VoiceRaceSex(v)
@@ -219,7 +226,7 @@ end
 local frame
 
 local function CreateExportFrame()
-    frame = CreateFrame("Frame", "CatQuestExportFrame", UIParent, "BackdropTemplate")
+    frame = CreateFrame("Frame", "CatQuestExportFrame", UIParent, ns.Backdrop)
     frame:SetSize(560, 400)
     frame:SetPoint("CENTER")
     frame:SetFrameStrata("DIALOG")
@@ -230,7 +237,7 @@ local function CreateExportFrame()
     frame:SetScript("OnDragStop", frame.StopMovingOrSizing)
     frame:SetClampedToScreen(true)
     frame:SetBackdrop({
-        bgFile = "Interface\\DialogFrame\\UI-DialogBox-Background-Dark",
+        bgFile = "Interface\\DialogFrame\\UI-DialogBox-Background",
         edgeFile = "Interface\\DialogFrame\\UI-DialogBox-Border",
         edgeSize = 24, insets = { left = 6, right = 6, top = 6, bottom = 6 },
     })
@@ -251,7 +258,7 @@ local function CreateExportFrame()
     local scroll = CreateFrame("ScrollFrame", "CatQuestExportScroll", frame, "UIPanelScrollFrameTemplate")
     scroll:SetPoint("TOPLEFT", 18, -92)
     scroll:SetPoint("BOTTOMRIGHT", -36, 48)
-    local bg = frame:CreateTexture(nil, "BACKGROUND", nil, 1)
+    local bg = frame:CreateTexture(nil, "BACKGROUND")
     bg:SetPoint("TOPLEFT", scroll, -4, 4)
     bg:SetPoint("BOTTOMRIGHT", scroll, 22, -4)
     bg:SetColorTexture(0, 0, 0, 0.5)
